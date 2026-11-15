@@ -16,7 +16,7 @@ SRC="${1:-$HERE/../Tawny Android}"
 # setup.* is Tawny Docker's /setup page, and sounds/_src holds the chime
 # recordings; neither ships in the app.
 rsync -a --delete \
-  --exclude 'setup.html' --exclude 'setup.js' --exclude 'setup.css' \
+  --exclude 'setup.html' --exclude 'setup.js' --exclude 'setup.css' --exclude 'setup-relays.js' \
   --exclude 'sounds/_src' --exclude 'config.json' \
   "$SRC/public/" "$HERE/web/"
 

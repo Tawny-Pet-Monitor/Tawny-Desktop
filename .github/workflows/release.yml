@@ -48,11 +48,14 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      # libpulse0: bundled into the AppImage by tools/build-appimage.sh, so the
+      # microphone (and with it the Monitor's camera) works on distros newer
+      # than this runner.
       - name: System packages
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libgtk-4-dev libxkbcommon-dev cmake ninja-build file patchelf
+            libgtk-4-dev libxkbcommon-dev cmake ninja-build file patchelf libpulse0
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 2026-10-16
         with:

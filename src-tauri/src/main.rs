@@ -6,10 +6,17 @@
 mod config;
 mod relay;
 mod server;
+mod settings;
 
 use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse};
 use tauri::{Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_runtime_cef::{AutoplayPolicy, Cef};
+
+/// The window title; TAWNY_APP_NAME lets Tawny DevOps say which one it is.
+const TITLE: &str = match option_env!("TAWNY_APP_NAME") {
+  Some(n) => n,
+  None => "Tawny",
+};
 
 /// The same executable is also Chromium's renderer, GPU and utility process.
 /// The attribute runs that side and returns before the app is ever built.
@@ -22,13 +29,20 @@ fn main() {
   // "delete app data" removes exactly %LOCALAPPDATA%\<identifier>. Local, not
   // roaming, data: a Chromium profile does not belong in %APPDATA%.
   // Under Flatpak these resolve inside ~/.var/app/io.github.PressF4me.Tawny.
-  const ID: &str = "io.github.PressF4me.Tawny";
+  // TAWNY_APP_ID: Tawny DevOps builds with its own, so it never shares the
+  // real Tawny's profile (saved channels, keys) on the same computer.
+  const ID: &str = match option_env!("TAWNY_APP_ID") {
+    Some(id) => id,
+    None => "io.github.PressF4me.Tawny",
+  };
   let data = dirs::data_local_dir().unwrap_or_else(std::env::temp_dir).join(ID);
   let cache = dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join(ID);
   // Checked before CEF creates it: a profile left by an earlier run means
   // this launch is an update (or a reopen), never a first install, even if
   // nothing was ever set up. The update board needs to know which.
   config::set_ran_before(data.join("profile").exists());
+  // The Servers panel's settings live beside the profile (settings.rs).
+  let settings_path = data.join("settings.json");
 
   let cef = Cef::default()
     // The Chromium profile: localStorage (saved channels, theme, language) and
@@ -41,14 +55,14 @@ fn main() {
 
   tauri::Builder::default()
     .runtime(cef)
-    .setup(|app| {
-      let port = server::start(app.handle().clone())?;
+    .setup(move |app| {
+      let port = server::start(app.handle().clone(), settings_path.clone())?;
       let origin = format!("http://127.0.0.1:{port}");
       let url: Url = format!("{origin}/").parse()?;
 
       let (width, height) = window_size(app);
       WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
-        .title("Tawny")
+        .title(TITLE)
         .inner_size(width, height)
         .min_inner_size(360., 560.)
         .center()

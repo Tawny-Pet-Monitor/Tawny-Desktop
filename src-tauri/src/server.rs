@@ -10,9 +10,11 @@
 //! included. A different port is a different, empty, localStorage.
 
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
 use axum::Router;
+use axum::body::Bytes;
 use axum::extract::{Query, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
@@ -22,6 +24,10 @@ use tauri::{AppHandle, Runtime};
 
 use crate::config::Config;
 use crate::relay::{self, Relay, Role};
+use crate::settings::Settings;
+
+/// A settings body is one short list of URLs.
+const MAX_SETTINGS_BODY: usize = 4096;
 
 /// First choice of port, and how far to look past it.
 const PREFERRED_PORT: u16 = 47821;
@@ -31,15 +37,26 @@ struct Ctx<R: Runtime> {
   app: AppHandle<R>,
   origin: String,
   host: String,
-  csp: String,
-  connect_src: String,
-  config_json: String,
+  /// What the build says; `current()` lays the user's settings over it.
+  config: Config,
+  settings: RwLock<Settings>,
+  settings_path: PathBuf,
   relay: Relay,
+}
+
+impl<R: Runtime> Ctx<R> {
+  /// The build's config with the user's saved relays in place. Worked out per
+  /// request, so a save on the Servers panel reaches config.json and the CSP
+  /// on the very next load, with no restart.
+  fn current(&self) -> Config {
+    let s = self.settings.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+    self.config.with_user_relays(&s.nostr_relays, s.nostr_only)
+  }
 }
 
 /// Bind now, so the caller knows the address before the window is built, and
 /// serve on Tauri's async runtime.
-pub fn start<R: Runtime>(app: AppHandle<R>) -> std::io::Result<u16> {
+pub fn start<R: Runtime>(app: AppHandle<R>, settings_path: PathBuf) -> std::io::Result<u16> {
   let listener = bind()?;
   let port = listener.local_addr()?.port();
   if port != PREFERRED_PORT {
@@ -47,14 +64,13 @@ pub fn start<R: Runtime>(app: AppHandle<R>) -> std::io::Result<u16> {
   }
   listener.set_nonblocking(true)?;
 
-  let config = Config::from_build();
   let ctx = Arc::new(Ctx {
     app,
     origin: format!("http://127.0.0.1:{port}"),
     host: format!("127.0.0.1:{port}"),
-    csp: config.csp(),
-    connect_src: config.connect_src(),
-    config_json: config.json(),
+    config: Config::from_build(),
+    settings: RwLock::new(Settings::load(&settings_path)),
+    settings_path,
     relay: Relay::default(),
   });
 
@@ -62,6 +78,7 @@ pub fn start<R: Runtime>(app: AppHandle<R>) -> std::io::Result<u16> {
   tauri::async_runtime::spawn(async move {
     let router = Router::new()
       .route("/config.json", get(config_json::<R>))
+      .route("/settings", get(settings_get::<R>).put(settings_put::<R>))
       .route("/ws", get(ws::<R>))
       .fallback(get(asset::<R>))
       .with_state(ctx);
@@ -113,8 +130,63 @@ async fn config_json<R: Runtime>(State(ctx): State<Arc<Ctx<R>>>, h: HeaderMap) -
   if !host_ok(&ctx, &h) {
     return StatusCode::MISDIRECTED_REQUEST.into_response();
   }
-  let res = ([(header::CONTENT_TYPE, "application/json; charset=utf-8")], ctx.config_json.clone());
-  secure(res.into_response(), &ctx.csp)
+  let cfg = ctx.current();
+  let res = ([(header::CONTENT_TYPE, "application/json; charset=utf-8")], cfg.json());
+  secure(res.into_response(), &cfg.csp())
+}
+
+/// The Servers panel: the user's own relays, and the build's to show as the default.
+async fn settings_get<R: Runtime>(State(ctx): State<Arc<Ctx<R>>>, h: HeaderMap) -> Response {
+  if !host_ok(&ctx, &h) {
+    return StatusCode::MISDIRECTED_REQUEST.into_response();
+  }
+  let mine = ctx.settings.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+  let body = serde_json::json!({
+    "nostrRelays": mine.nostr_relays,
+    "nostrOnly": mine.nostr_only,
+    "defaults": ctx.config.build_relays(),
+  })
+  .to_string();
+  secure(([(header::CONTENT_TYPE, "application/json; charset=utf-8")], body).into_response(), &ctx.current().csp())
+}
+
+/// Save the user's relays. Only this app's own page may: the Origin must be
+/// ours and the body JSON, which no other site can send here without a CORS
+/// preflight that this server never answers.
+async fn settings_put<R: Runtime>(State(ctx): State<Arc<Ctx<R>>>, h: HeaderMap, body: Bytes) -> Response {
+  if !host_ok(&ctx, &h) {
+    return StatusCode::MISDIRECTED_REQUEST.into_response();
+  }
+  if !origin_ok(&ctx, &h) {
+    return StatusCode::FORBIDDEN.into_response();
+  }
+  let json =
+    h.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).is_some_and(|v| v.starts_with("application/json"));
+  if !json {
+    return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
+  }
+  if body.len() > MAX_SETTINGS_BODY {
+    return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+  }
+  let asked: Settings = match serde_json::from_slice(&body) {
+    Ok(s) => s,
+    Err(_) => return (StatusCode::BAD_REQUEST, "not a settings object").into_response(),
+  };
+  let s = match Settings::validated(asked.nostr_relays, asked.nostr_only) {
+    Ok(s) => s,
+    Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+  };
+  if let Err(e) = s.save(&ctx.settings_path) {
+    log::error!("could not save settings: {e}");
+    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+  }
+  log::info!(
+    "settings saved: {} relay(s) of the user's own{}",
+    s.nostr_relays.len(),
+    if s.nostr_only { ", and only those" } else { "" }
+  );
+  *ctx.settings.write().unwrap_or_else(std::sync::PoisonError::into_inner) = s;
+  StatusCode::NO_CONTENT.into_response()
 }
 
 async fn asset<R: Runtime>(State(ctx): State<Arc<Ctx<R>>>, h: HeaderMap, uri: Uri) -> Response {
@@ -135,13 +207,14 @@ async fn asset<R: Runtime>(State(ctx): State<Arc<Ctx<R>>>, h: HeaderMap, uri: Ur
   if path != "/index.html" && resolver.get("/index.html".into()).is_some_and(|i| i.bytes == asset.bytes) {
     return StatusCode::NOT_FOUND.into_response();
   }
+  let cfg = ctx.current();
   let mut body = asset.bytes;
   if path == "/index.html" {
-    let html = String::from_utf8_lossy(&body).replace("__TAWNY_CONNECT_SRC__", &ctx.connect_src);
+    let html = String::from_utf8_lossy(&body).replace("__TAWNY_CONNECT_SRC__", &cfg.connect_src());
     body = html.into_bytes();
   }
   let mime = mime(path).map_or(asset.mime_type, String::from);
-  secure(([(header::CONTENT_TYPE, mime)], body).into_response(), &ctx.csp)
+  secure(([(header::CONTENT_TYPE, mime)], body).into_response(), &cfg.csp())
 }
 
 #[derive(Deserialize)]
