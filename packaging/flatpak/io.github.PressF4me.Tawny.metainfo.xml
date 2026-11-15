@@ -60,6 +60,11 @@
   </supports>
 
   <releases>
+    <release version="0.1.13" date="2026-11-15">
+      <description>
+        <p>Devices now find each other through Nostr relays first, with Tawny's own service as the backup. Servers lets you use your own relays, or only your relays. An expired pairing code or an old QR code can no longer be used to connect. The AppImage's microphone works on newer Linux systems.</p>
+      </description>
+    </release>
     <release version="0.1.12" date="2026-11-12">
       <description>
         <p>Security update: Tawny is built with patched components after a full security review, and its release builds are pinned to exact, reviewed versions of every tool they use.</p>
