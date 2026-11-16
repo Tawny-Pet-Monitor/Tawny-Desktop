@@ -15,16 +15,20 @@ account, no sign-up.
 Video and audio go **peer to peer over WebRTC**, encrypted end to end
 (DTLS-SRTP).
 
-- **Android app:** [Tawny-APK](https://github.com/PressF4me/Tawny-APK)
-- **Self-hosting:** [Tawny Docker](https://github.com/PressF4me/Tawny-Docker)
+**Away from home, the two devices find each other over [Nostr](https://github.com/nostr-protocol/nips).**
+They leave each other sealed notes on ordinary Nostr relays, so pairing does
+not depend on any one company's server. See [Nostr](#nostr) below.
+
+- **Android app:** [Tawny-APK](https://github.com/Tawny-Pet-Monitor/Tawny-APK)
+- **Self-hosting:** [Tawny Docker](https://github.com/Tawny-Pet-Monitor/Tawny-Docker)
 
 ## Install
 
 | Format | Where |
 |---|---|
-| Flatpak | Flathub (`io.github.PressF4me.Tawny`, once published), or the `.flatpak` bundle from [Releases](https://github.com/PressF4me/Tawny-Desktop/releases) |
-| AppImage | [Releases](https://github.com/PressF4me/Tawny-Desktop/releases): `chmod +x Tawny_*.AppImage` and run it |
-| Windows | [Releases](https://github.com/PressF4me/Tawny-Desktop/releases): `Tawny_*_x64-setup.exe`. It installs for your user only, with no admin prompt |
+| Flatpak | Flathub (`io.github.PressF4me.Tawny`, once published), or the `.flatpak` bundle from [Releases](https://github.com/Tawny-Pet-Monitor/Tawny-Desktop/releases) |
+| AppImage | [Releases](https://github.com/Tawny-Pet-Monitor/Tawny-Desktop/releases): `chmod +x Tawny_*.AppImage` and run it |
+| Windows | [Releases](https://github.com/Tawny-Pet-Monitor/Tawny-Desktop/releases): `Tawny_*_x64-setup.exe`. It installs for your user only, with no admin prompt |
 
 x86_64 only for now.
 
@@ -51,6 +55,26 @@ x86_64 only for now.
   can't yet host the broker process the Windows sandbox needs. The page Tawny
   loads is only ever its own, but the renderer has less isolation than on
   Linux, where the sandbox is on.
+
+## Nostr
+
+From 0.1.13, Tawny uses Nostr to introduce the two devices when they are not
+on the same network.
+
+- **Only the introduction** goes over the relays. Video and audio go straight
+  between the devices.
+- **Sealed.** Every note is a gift wrap (NIP-59) encrypted with NIP-44, so a
+  relay sees an envelope and nothing inside it. The notes are ephemeral and
+  are not stored.
+- **Each relay is tested first**, with a sealed note the device sends itself.
+- **Your own relays.** "Servers (advanced)", under the channel list, replaces the
+  built-in list (`relay.primal.net`, `relay.nostr.net`, `relay.snort.social`).
+  **Use only my relays** pairs through yours and nothing else, after a test
+  and a confirmation.
+- **The Monitor has its own key**, random and kept on the Monitor. The pairing
+  QR carries only the public half.
+- **A backup stays.** If no relay delivers, the rendezvous service is used
+  instead.
 
 ## How it's built
 
