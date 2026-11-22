@@ -1,0 +1,4 @@
+# libwebrtc's Windows build links the C runtime statically (/MT); everything
+# else in the program has to as well, or MSVC refuses to link the two.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
