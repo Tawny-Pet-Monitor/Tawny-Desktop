@@ -46,8 +46,52 @@ jobs:
       - name: Test
         run: cargo test --release --locked
 
+      - name: Installer
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
+          $nsis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
+          if (-not $nsis) { $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe" }
+          & $nsis /V2 "/DVERSION=$v" "/DEXE=$pwd\target\release\tawny.exe" "/DOUT=$pwd\target\Tawny-$v-x64-setup.exe" packaging\windows\tawny.nsi
+          if ($LASTEXITCODE) { exit 1 }
+
+      # The installer on a real Windows: install silently, check what it set
+      # up, have the installed program draw every screen (its screenshot mode
+      # needs no display), then uninstall and check it all went.
+      - name: Try the installer
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem target\Tawny-*-setup.exe)[0].FullName
+          Start-Process $setup -ArgumentList '/S' -Wait
+          $exe = "$env:LOCALAPPDATA\Tawny\tawny.exe"
+          if (-not (Test-Path $exe)) { throw "tawny.exe was not installed" }
+          $cmd = (Get-ItemProperty 'HKCU:\Software\Classes\tawny\shell\open\command').'(default)'
+          if ($cmd -ne "`"$exe`" `"%1`"") { throw "tawny:// handler is '$cmd'" }
+          $app = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Tawny'
+          "installed: $($app.DisplayName) $($app.DisplayVersion)"
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Tawny\Tawny.lnk")) { throw "no Start menu entry" }
+          Start-Process $exe -ArgumentList '--shot', "$pwd\target\shots-windows" -Wait
+          $n = (Get-ChildItem target\shots-windows\*.png).Count
+          "the installed program drew $n screens"
+          if ($n -lt 60) { throw "only $n screens drawn" }
+          Start-Process "$env:LOCALAPPDATA\Tawny\uninstall.exe" -ArgumentList '/S' -Wait
+          # The uninstaller hands over to a copy of itself and returns early.
+          for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep 1 }
+          if (Test-Path $exe) { throw "still installed after uninstalling" }
+          if (Test-Path 'HKCU:\Software\Classes\tawny') { throw "tawny:// handler left behind" }
+          if (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Tawny') { throw "Apps entry left behind" }
+          "uninstalled cleanly"
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: tawny-windows-x64
-          path: native/desktop/target/release/tawny.exe
+          path: |
+            native/desktop/target/Tawny-*-x64-setup.exe
+            native/desktop/target/release/tawny.exe
+          retention-days: 14
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: shots-windows
+          path: native/desktop/target/shots-windows/
           retention-days: 14

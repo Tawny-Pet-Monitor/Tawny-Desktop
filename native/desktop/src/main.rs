@@ -3,6 +3,9 @@
 //! `tawny-desktop` opens the app. `tawny-desktop --shot <dir>` renders every
 //! screen, light and dark, to PNGs with no display (Slint's software
 //! renderer), for comparing against today's web UI.
+// No console window behind the app on Windows (release builds; a debug
+// build keeps it for its log).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
 mod audio;
