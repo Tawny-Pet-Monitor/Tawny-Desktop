@@ -1,5 +1,6 @@
 //! NIP-01 events: building, signing (BIP-340 Schnorr), checking.
 
+use k256::FieldBytes;
 use k256::schnorr::{Signature, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -82,7 +83,7 @@ pub fn id_for(
 /// # Errors
 /// [`EventError::Key`] for a zero or out-of-range key.
 pub fn public_key(secret: &[u8; 32]) -> Result<String, EventError> {
-    let sk = SigningKey::from_bytes(secret).map_err(|_| EventError::Key)?;
+    let sk = SigningKey::from_bytes(&FieldBytes::from(*secret)).map_err(|_| EventError::Key)?;
     Ok(hex::encode(sk.verifying_key().to_bytes()))
 }
 
@@ -91,7 +92,7 @@ pub fn public_key(secret: &[u8; 32]) -> Result<String, EventError> {
 /// # Errors
 /// [`EventError::Key`] for an unusable key or a failed RNG.
 pub fn sign(t: Template, secret: &[u8; 32]) -> Result<Event, EventError> {
-    let sk = SigningKey::from_bytes(secret).map_err(|_| EventError::Key)?;
+    let sk = SigningKey::from_bytes(&FieldBytes::from(*secret)).map_err(|_| EventError::Key)?;
     let pubkey = hex::encode(sk.verifying_key().to_bytes());
     let id = id_for(&pubkey, t.created_at, t.kind, &t.tags, &t.content);
     let id_bytes = hex::decode(&id).map_err(|_| EventError::Id)?;
@@ -185,6 +186,8 @@ impl Event {
         }
         let Some(sig) = &self.sig else { return Ok(()) };
         let pk = hex::decode(&self.pubkey).map_err(|_| EventError::Signature)?;
+        // An x-only key is exactly 32 bytes; anything else is refused here.
+        let pk = FieldBytes::try_from(pk.as_slice()).map_err(|_| EventError::Signature)?;
         let vk = VerifyingKey::from_bytes(&pk).map_err(|_| EventError::Signature)?;
         let sig = hex::decode(sig)
             .ok()

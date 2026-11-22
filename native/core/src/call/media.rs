@@ -35,7 +35,6 @@ use libwebrtc::peer_connection_factory::{IceServer, PeerConnectionFactory, RtcCo
 use libwebrtc::rtp_parameters::DegradationPreference;
 use libwebrtc::rtp_transceiver::{RtpTransceiver, RtpTransceiverDirection, RtpTransceiverInit};
 use libwebrtc::session_description::{SdpType, SessionDescription};
-use libwebrtc::stats::RtcStats;
 use libwebrtc::video_source::VideoResolution;
 use libwebrtc::video_source::native::NativeVideoSource;
 use libwebrtc::video_track::RtcVideoTrack;
@@ -167,24 +166,17 @@ fn parse_candidate(v: &Value) -> Option<IceCandidate> {
     IceCandidate::parse(v["sdpMid"].as_str().unwrap_or("0"), idx, s).ok()
 }
 
-/// The security code for a connected peer, the way `computeSas()` does it.
-async fn security_code(pc: &PeerConnection, key: &str) -> Option<String> {
-    let stats = pc.get_stats().await.ok()?;
-    let fps: Vec<String> = stats
-        .iter()
-        .filter_map(|s| match s {
-            RtcStats::Certificate(c) => Some(sas::normalise(
-                &c.certificate.fingerprint_algorithm,
-                &c.certificate.fingerprint,
-            )),
-            _ => None,
-        })
-        .collect();
-    let pair = match fps.as_slice() {
-        [a, b] => sas::negotiated(a, Some(b), ""),
-        [local] => sas::negotiated(local, None, &pc.current_remote_description()?.to_string()),
-        _ => None,
-    }?;
+/// The security code for a connected peer, the way `computeSas()` does it,
+/// over the two certificates' fingerprints.
+///
+/// They are read from the two descriptions, not from the stats report:
+/// libwebrtc's stats glue can end the whole program from a thread nothing
+/// can catch on (seen as silent aborts on both ends of a call), and once
+/// connected the descriptions name the same certificates (DTLS refuses a far
+/// certificate that doesn't match its description's fingerprint).
+fn security_code(pc: &PeerConnection, key: &str) -> Option<String> {
+    let local = sas::sdp_fingerprint(&pc.current_local_description()?.to_string())?;
+    let pair = sas::negotiated(&local, None, &pc.current_remote_description()?.to_string())?;
     Some(sas::code(key, &pair[0], &pair[1]))
 }
 
@@ -449,7 +441,7 @@ impl StationActor {
                     self.retune();
                 }
                 StationMsg::Close => break,
-                StationMsg::State(id, s) => self.on_state(&id, s).await,
+                StationMsg::State(id, s) => self.on_state(&id, s),
                 StationMsg::Broadcast(f) => self.broadcast(&f),
                 StationMsg::SendTo(id, f) => {
                     if let (true, Some(o)) = (self.viewers.contains_key(&id), f.as_object()) {
@@ -672,7 +664,7 @@ impl StationActor {
         }
     }
 
-    async fn on_state(&mut self, id: &str, s: PeerConnectionState) {
+    fn on_state(&mut self, id: &str, s: PeerConnectionState) {
         match s {
             PeerConnectionState::Connected => {
                 let Some(v) = self.viewers.get_mut(id) else {
@@ -685,7 +677,7 @@ impl StationActor {
                 let pc = v.pc.clone();
                 self.emit(StationEvent::Connected { id: id.to_owned() });
                 self.update_capture();
-                let code = security_code(&pc, &self.cfg.channel_key).await;
+                let code = security_code(&pc, &self.cfg.channel_key);
                 self.emit(StationEvent::Sas {
                     id: id.to_owned(),
                     code,
@@ -925,7 +917,7 @@ impl ViewerActor {
                     self.reoffer().await;
                 }
                 ViewerMsg::Close => break,
-                ViewerMsg::State(s) => self.on_state(s).await,
+                ViewerMsg::State(s) => self.on_state(s),
                 ViewerMsg::Ice(c) => {
                     if let Some(to) = &self.station {
                         let _ = self.ev.send(ViewerEvent::Signal(
@@ -1140,13 +1132,13 @@ impl ViewerActor {
         let _ = self.ev.send(ViewerEvent::Signal(msg));
     }
 
-    async fn on_state(&mut self, s: PeerConnectionState) {
+    fn on_state(&mut self, s: PeerConnectionState) {
         match s {
             PeerConnectionState::Connected if !self.connected => {
                 self.connected = true;
                 let _ = self.ev.send(ViewerEvent::Connected);
                 let Some(pc) = self.pc.clone() else { return };
-                let code = security_code(&pc, &self.cfg.channel_key).await;
+                let code = security_code(&pc, &self.cfg.channel_key);
                 let _ = self.ev.send(ViewerEvent::Sas(code));
             }
             PeerConnectionState::Failed => {

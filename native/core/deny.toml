@@ -1,0 +1,31 @@
+# cargo deny check: known vulnerabilities, licences, where crates come from.
+
+[graph]
+all-features = true
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+
+[advisories]
+# cargo audit also lists basic-toml as unmaintained: it comes in through
+# uniffi's build tooling, with no known flaw; reviewed 2026-11-22.
+unmaintained = "workspace"
+
+[licenses]
+allow = [
+  "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause",
+  "ISC", "Zlib", "Unicode-3.0", "CC0-1.0", "BSL-1.0",
+]
+confidence-threshold = 0.9
+
+# The Mozilla CA list comes under a permissive data licence.
+exceptions = [
+  { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

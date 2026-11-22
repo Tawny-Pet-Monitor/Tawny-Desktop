@@ -9,8 +9,8 @@ use base64::engine::general_purpose::STANDARD;
 use chacha20::ChaCha20;
 use chacha20::cipher::{KeyIvInit, StreamCipher};
 use hmac::{Hmac, Mac};
-use k256::elliptic_curve::sec1::FromEncodedPoint;
-use k256::{AffinePoint, EncodedPoint, SecretKey};
+use k256::elliptic_curve::sec1::FromSec1Point;
+use k256::{AffinePoint, Sec1Point, SecretKey};
 use sha2::Sha256;
 use thiserror::Error;
 
@@ -113,8 +113,8 @@ pub fn conversation_key(
     let mut sec1 = [0u8; 33];
     sec1[0] = 0x02;
     sec1[1..].copy_from_slice(pub_x);
-    let point = EncodedPoint::from_bytes(sec1).map_err(|_| Nip44Error::PublicKey)?;
-    let affine: Option<AffinePoint> = AffinePoint::from_encoded_point(&point).into();
+    let point = Sec1Point::from_bytes(sec1).map_err(|_| Nip44Error::PublicKey)?;
+    let affine: Option<AffinePoint> = AffinePoint::from_sec1_point(&point).into();
     let affine = affine.ok_or(Nip44Error::PublicKey)?;
     let shared = k256::ecdh::diffie_hellman(secret.to_nonzero_scalar(), affine);
     Ok(ConversationKey(hmac(
