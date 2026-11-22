@@ -46,6 +46,11 @@ jobs:
       - name: Test
         run: cargo test --release --locked
 
+      # The runner image no longer carries NSIS; a pinned one from Chocolatey.
+      - name: NSIS
+        shell: pwsh
+        run: choco install nsis --version=3.11.0 -y --no-progress
+
       - name: Installer
         shell: pwsh
         run: |
