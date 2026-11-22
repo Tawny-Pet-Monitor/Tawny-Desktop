@@ -1,0 +1,566 @@
+// Tip in Bitcoin (#tip-pick, #tip-thanks in web/index.html): the amount pills,
+// the invoice's QR on its white plate with Tawny perched on the edge, and the
+// thank-you once the tip lands. The Rust side asks Strike for the invoice and
+// listens for its receipt (src/tip.rs); this only draws what it is told.
+
+import { Theme } from "theme.slint";
+import { GhostButton, LinkButton, PrimaryButton } from "widgets.slint";
+
+// One amount pill: the big line ("$2") and the small one ("1,860 sats").
+export struct TipAmount {
+    big: string,
+    small: string,
+}
+
+export global Tip {
+    // "hub", "pick" or "thanks".
+    in-out property <string> page: "hub";
+    // The picked pill: 0..2 the set amounts, 3 "Other".
+    in-out property <int> pick;
+    in-out property <[TipAmount]> amounts: [
+        { big: "$2", small: "" }, { big: "$5", small: "" }, { big: "$10", small: "" },
+    ];
+    // What "Other" made, once its code exists ("$3.50"); empty until then.
+    in-out property <string> other-made;
+    // The plate: "loading", "qr", "error" or "empty".
+    in-out property <string> state: "loading";
+    // An error because this computer is offline (not the service).
+    in-out property <bool> offline;
+    in-out property <image> qr;
+    in-out property <string> code: "—";
+    // A receipt is being listened for.
+    in-out property <bool> waiting;
+    // "$" with a price, "sats" without one.
+    in-out property <string> currency: "$";
+    in-out property <bool> copied;
+    in-out property <bool> copy-failed;
+    // The thank-you's one loud number, and the sats under it.
+    in-out property <string> big-amount;
+    in-out property <string> big-sats;
+    // The owlet on the plate, drawn by the Rust side at this size.
+    in-out property <image> owl;
+    out property <length> owl-width: 78px;
+    out property <length> owl-height: 70px;
+    // The trio on the thank-you, drawn the same way.
+    in-out property <image> party;
+    out property <length> party-width: 260px;
+    out property <length> party-height: 188px;
+
+    callback choose(int);
+    callback other(string);
+    callback retry();
+    callback copy();
+    callback strike();
+    callback back();
+    callback close();
+    callback owl-tapped(length, length, length, length);
+    callback party-tapped(length, length, length, length);
+}
+
+// The sky ring that turns while something is on its way (".tip-spin").
+component Spin inherits Rectangle {
+    in property <length> size: 22px;
+    in property <length> stroke: 2.5px;
+    width: size;
+    height: size;
+    // Slower, not stopped, when animations are off (as the page does).
+    property <float> turn: mod(animation-tick() / (Theme.still ? 2.4s : 0.9s), 1);
+    property <float> r: 50 - 50 * stroke / size;
+    Rectangle {
+        border-radius: self.width / 2;
+        border-width: root.stroke;
+        border-color: Theme.sky.transparentize(0.7);
+    }
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        property <angle> a: root.turn * 360deg;
+        commands: "M " + (50 + root.r * sin(self.a)) + " " + (50 - root.r * cos(self.a))
+            + " A " + root.r + " " + root.r + " 0 0 1 "
+            + (50 + root.r * sin(self.a + 90deg)) + " " + (50 - root.r * cos(self.a + 90deg));
+        stroke: Theme.sky;
+        stroke-width: root.stroke;
+        stroke-line-cap: round;
+        fill: transparent;
+    }
+}
+
+// An amount pill (".tip-amt"): the picked one fills with ink.
+component AmountPill inherits Rectangle {
+    in property <string> big;
+    in property <string> small;
+    in property <bool> picked;
+    callback clicked();
+    height: 56px;
+    border-radius: self.height / 2;
+    border-width: 1px;
+    border-color: picked || touch.has-hover || focus.has-focus ? Theme.fg : Theme.line;
+    background: picked ? Theme.fg : Theme.panel;
+    animate background, border-color { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: big + " " + small;
+    accessible-checked: picked;
+    accessible-checkable: true;
+    accessible-action-default => { clicked(); }
+    forward-focus: focus;
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == "\n") { root.clicked(); return accept; }
+            reject
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    VerticalLayout {
+        alignment: center;
+        padding-left: 2px;
+        padding-right: 2px;
+        Text {
+            text: root.big;
+            font-family: Theme.strong-font;
+            font-size: 16px;
+            color: root.picked ? Theme.bg : Theme.fg;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.small;
+            font-size: 11px;
+            color: root.picked ? Theme.bg.transparentize(0.2) : Theme.dim;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+    Rectangle {
+        x: -4px; y: -4px; width: parent.width + 8px; height: parent.height + 8px;
+        border-radius: self.height / 2;
+        border-width: focus.has-focus ? 2px : 0;
+        border-color: Theme.fg;
+    }
+}
+
+// The Lightning page (#tip-pick).
+export component TipPick inherits VerticalLayout {
+    spacing: 0;
+    alignment: start;
+    // The head: back, then the title and its line.
+    HorizontalLayout {
+        spacing: 12px;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            back := Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 20px;
+                background: back-touch.has-hover ? Theme.fg.mix(Theme.raise, 0.1) : Theme.raise;
+                accessible-role: button;
+                accessible-label: @tr("Back");
+                accessible-action-default => { Tip.back(); }
+                forward-focus: back-focus;
+                back-focus := FocusScope {
+                    key-pressed(e) => {
+                        if (e.text == " " || e.text == "\n") { Tip.back(); return accept; }
+                        reject
+                    }
+                }
+                back-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Tip.back(); }
+                }
+                Path {
+                    width: 18px;
+                    height: 18px;
+                    viewbox-width: 24;
+                    viewbox-height: 24;
+                    commands: "M15 4.5 7.8 12 15 19.5";
+                    stroke: Theme.fg;
+                    stroke-width: 2.4px;
+                    stroke-line-cap: round;
+                    fill: transparent;
+                }
+                Rectangle {
+                    x: -3px; y: -3px; width: parent.width + 6px; height: parent.height + 6px;
+                    border-radius: self.width / 2;
+                    border-width: back-focus.has-focus ? 2px : 0;
+                    border-color: Theme.berry;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: @tr("Tip in Bitcoin");
+                font-family: Theme.strong-font;
+                font-size: 19px;
+                color: Theme.fg;
+                accessible-role: text;
+            }
+            Text {
+                text: @tr("Over Lightning, with any wallet. Tawny stays free either way.");
+                font-size: 14px;
+                color: Theme.dim;
+                wrap: word-wrap;
+            }
+        }
+    }
+    Rectangle { height: 16px; }
+    pills := HorizontalLayout {
+        spacing: 8px;
+        accessible-role: list;
+        accessible-label: @tr("Amount");
+        for a[i] in Tip.amounts: AmountPill {
+            width: (pills.width - 24px) / 4;
+            big: a.big;
+            small: a.small;
+            picked: Tip.pick == i;
+            clicked => { Tip.choose(i); }
+        }
+        AmountPill {
+            width: (pills.width - 24px) / 4;
+            big: @tr("Other");
+            small: Tip.pick == 3 && Tip.other-made != "" ? Tip.other-made : @tr("any amount");
+            picked: Tip.pick == 3;
+            clicked => { Tip.choose(3); }
+        }
+    }
+    // "Other": the amount, then "Create code" (#tip-other).
+    if Tip.pick == 3: VerticalLayout {
+        padding-top: 10px;
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: Tip.currency;
+                font-family: Theme.strong-font;
+                font-size: 16px;
+                color: Theme.dim;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                height: 46px;
+                horizontal-stretch: 1;
+                border-radius: Theme.r-ctl;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: amount.has-focus ? Theme.sky : Theme.line;
+                if amount.text == "": Text {
+                    x: 12px;
+                    text: Tip.currency == "$" ? "3.50" : "5000";
+                    font-size: 16px;
+                    color: Theme.dim.transparentize(0.35);
+                    vertical-alignment: center;
+                    height: parent.height;
+                }
+                amount := TextInput {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    height: parent.height;
+                    font-size: 16px;
+                    color: Theme.fg;
+                    vertical-alignment: center;
+                    input-type: decimal;
+                    single-line: true;
+                    accessible-label: @tr("Amount");
+                    accepted => { Tip.other(self.text); }
+                    init => { self.focus(); }
+                }
+            }
+            GhostButton {
+                width: 130px;
+                min-height: 46px;
+                solid: true;
+                text: @tr("Create code");
+                clicked => { Tip.other(amount.text); }
+            }
+        }
+    }
+    // The plate, with Tawny perched on its top edge (".tip-qr", ".tip-owl").
+    Rectangle { height: 50px; }
+    HorizontalLayout {
+        alignment: center;
+        plate := Rectangle {
+            width: 248px;
+            height: 248px;
+            border-radius: 14px;
+            background: #ffffff;
+            border-width: 1px;
+            border-color: Theme.line;
+            accessible-role: image;
+            accessible-label: Tip.state == "qr" ? @tr("QR code of the Lightning invoice") : "";
+            if Tip.state == "qr": Image {
+                x: 12px;
+                y: 12px;
+                width: parent.width - 24px;
+                height: parent.height - 24px;
+                source: Tip.qr;
+                // Printed in: it rises a little as it comes.
+                property <bool> shown;
+                init => { self.shown = true; }
+                opacity: self.shown ? 1 : 0;
+                animate opacity { duration: Theme.still ? 0ms : 450ms; easing: cubic-bezier(0.2, 0.8, 0.3, 1); }
+            }
+            // The orb: the accent's one moment on this page.
+            if Tip.state == "qr": Rectangle {
+                property <bool> shown;
+                init => { self.shown = true; }
+                width: parent.width * 0.15 + 8px;
+                height: self.width;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: self.width / 2;
+                background: #ffffff;
+                opacity: self.shown ? 1 : 0;
+                animate opacity { duration: Theme.still ? 0ms : 400ms; delay: 450ms; }
+                Rectangle {
+                    width: parent.width - 8px;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: #d24b6d;
+                    // While a receipt is awaited the bolt gives a small zap now and then.
+                    property <float> u: Theme.still || !Tip.waiting ? 0 : mod(animation-tick() / 2.8s, 1);
+                    property <float> zap: self.u < 0.86 ? 0 : self.u < 0.9 ? (self.u - 0.86) / 0.04 : self.u < 0.94 ? 1 - (self.u - 0.9) / 0.04 * 1.3 : (1 - self.u) / 0.06 * -0.3;
+                    Path {
+                        width: parent.width * 0.54 * (1 + 0.22 * max(0, parent.zap));
+                        height: self.width;
+                        viewbox-width: 24;
+                        viewbox-height: 24;
+                        commands: "M15 1.8 5.8 13.2h5.2L9 22.2l9.2-11.4H13z";
+                        fill: #ffffff;
+                    }
+                }
+            }
+            if Tip.state != "qr": VerticalLayout {
+                alignment: center;
+                padding: 18px;
+                spacing: 10px;
+                if Tip.state == "loading": HorizontalLayout {
+                    alignment: center;
+                    Spin { }
+                }
+                Text {
+                    text: Tip.state == "loading" ? @tr("Creating your code…")
+                        : Tip.state == "empty" ? @tr("Type an amount, then “Create code”.")
+                        : Tip.offline ? @tr("You’re offline. Connect, then try again.")
+                        : @tr("Couldn’t reach the tip service.");
+                    font-size: 13px;
+                    color: #5a5364;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                    accessible-role: text;
+                }
+                if Tip.state == "error": LinkButton {
+                    text: @tr("Try again");
+                    clicked => { Tip.retry(); }
+                }
+            }
+            owl := Image {
+                width: Tip.owl-width;
+                height: Tip.owl-height;
+                x: (parent.width - self.width) / 2;
+                y: -53px;
+                source: Tip.owl;
+                accessible-role: image;
+                accessible-label: "Tawny the owlet";
+                TouchArea {
+                    mouse-cursor: pointer;
+                    pointer-event(e) => {
+                        if (e.kind == PointerEventKind.down) {
+                            Tip.owl-tapped(self.mouse-x, self.mouse-y, self.width, self.height);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Rectangle { height: 10px; }
+    Text {
+        text: @tr("Scan with any Bitcoin wallet on your phone");
+        font-size: 13.5px;
+        color: Theme.fg;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+    // Kept in the layout either way, so nothing below jumps when it comes.
+    Rectangle {
+        height: 24px;
+        opacity: Tip.waiting && Tip.state == "qr" ? 1 : 0;
+        animate opacity { duration: Theme.quick; }
+        HorizontalLayout {
+            alignment: center;
+            spacing: 7px;
+            padding-top: 2px;
+            VerticalLayout {
+                alignment: center;
+                Spin { size: 11px; stroke: 2px; }
+            }
+            Text {
+                text: @tr("Waiting for payment…");
+                font-size: 12.5px;
+                color: Theme.dim;
+                vertical-alignment: center;
+            }
+        }
+    }
+    Rectangle { height: 12px; }
+    // A computer seldom has a wallet that opens lightning: links, so the
+    // web page's desktop way out is strike.me.
+    GhostButton {
+        text: @tr("No wallet? Pay on strike.me");
+        clicked => { Tip.strike(); }
+    }
+    Rectangle { height: 8px; }
+    HorizontalLayout {
+        spacing: 10px;
+        Text {
+            text: Tip.state == "qr" ? Tip.code : "—";
+            font-family: "DejaVu Sans Mono";
+            font-size: 12px;
+            color: Theme.dim;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        LinkButton {
+            min-height: 40px;
+            horizontal-stretch: 0;
+            width: 120px;
+            text: Tip.copied ? @tr("Copied") : Tip.copy-failed ? @tr("Couldn’t copy") : @tr("Copy invoice");
+            accent: Tip.state == "qr";
+            clicked => { if (Tip.state == "qr") { Tip.copy(); } }
+        }
+    }
+    LinkButton {
+        min-height: 40px;
+        text: @tr("Not now");
+        clicked => { Tip.close(); }
+    }
+}
+
+// The thank-you (#tip-thanks): the three of them, a check drawn in, hearts
+// drifting up, the amount, and Done.
+export component TipThanks inherits VerticalLayout {
+    spacing: 0;
+    alignment: start;
+    property <bool> shown;
+    init => { self.shown = true; }
+    Rectangle {
+        height: Tip.party-height;
+        party := Image {
+            width: Tip.party-width;
+            height: Tip.party-height;
+            x: (parent.width - self.width) / 2;
+            source: Tip.party;
+            accessible-role: image;
+            accessible-label: "A cat, Tawny the owlet and a dog";
+            TouchArea {
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down) {
+                        Tip.party-tapped(self.mouse-x, self.mouse-y, self.width, self.height);
+                    }
+                }
+            }
+        }
+        // The check, drawn round then ticked (".tip-check").
+        Rectangle {
+            width: 52px;
+            height: 52px;
+            x: party.x + party.width - self.width - 8px;
+            y: 6px;
+            property <float> ring: Theme.still || root.shown ? 1 : 0;
+            property <float> tick: Theme.still || root.shown ? 1 : 0;
+            animate ring { duration: Theme.still ? 0ms : 550ms; easing: ease-out; }
+            animate tick { duration: Theme.still ? 0ms : 350ms; delay: 450ms; easing: ease-out; }
+            Path {
+                width: parent.width;
+                height: parent.height;
+                viewbox-width: 52;
+                viewbox-height: 52;
+                // The ring drawn as an arc that grows to the full circle.
+                property <angle> a: max(0.001, parent.ring) * 359.9deg;
+                commands: "M 26 2 A 24 24 0 " + (self.a > 180deg ? 1 : 0) + " 1 " + (26 + 24 * sin(self.a)) + " " + (26 - 24 * cos(self.a));
+                stroke: Theme.berry;
+                stroke-width: 2.5px;
+                fill: transparent;
+            }
+            Path {
+                width: parent.width;
+                height: parent.height;
+                viewbox-width: 52;
+                viewbox-height: 52;
+                property <float> t: parent.tick;
+                // M15 27 l7 7 l15 -16, drawn along its length.
+                commands: self.t < 0.3
+                    ? "M15 27 L" + (15 + 7 * self.t / 0.3) + " " + (27 + 7 * self.t / 0.3)
+                    : "M15 27 L22 34 L" + (22 + 15 * (self.t - 0.3) / 0.7) + " " + (34 - 16 * (self.t - 0.3) / 0.7);
+                stroke: Theme.berry;
+                stroke-width: 3.5px;
+                stroke-line-cap: round;
+                fill: transparent;
+                opacity: self.t > 0 ? 1 : 0;
+            }
+        }
+        // Seven hearts drifting up and fading (".tip-hearts").
+        if !Theme.still: Rectangle {
+            property <duration> t0;
+            init => { self.t0 = animation-tick(); }
+            for i in 7: Path {
+                property <float> u: min(1, max(0, ((animation-tick() - parent.t0) / 1ms - [0, 420, 180, 760, 300, 600, 90][i]) / 3000));
+                property <length> s: 14px * [1.0, 1.2, 0.9, 1.1, 1.3, 0.85, 1.05][i];
+                width: self.s;
+                height: self.s;
+                x: parent.width * [0.22, 0.35, 0.47, 0.58, 0.69, 0.8, 0.3][i];
+                y: parent.height * 0.65 - 120px * self.u;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: "M12 20.3C6.2 16.1 3 12.9 3 9.3 3 6.6 5.1 4.6 7.6 4.6c1.8 0 3.3 1 4.4 2.5 1.1-1.5 2.6-2.5 4.4-2.5 2.5 0 4.6 2 4.6 4.7 0 3.6-3.2 6.8-9 11z";
+                fill: #e0344f;
+                opacity: self.u <= 0 || self.u >= 1 ? 0 : self.u < 0.2 ? self.u / 0.2 * 0.5 : 0.5 * (1 - (self.u - 0.2) / 0.8);
+            }
+        }
+    }
+    Text {
+        text: @tr("Thank you!");
+        font-family: Theme.display-font;
+        font-size: 36px;
+        color: Theme.fg;
+        horizontal-alignment: center;
+        accessible-role: text;
+        opacity: root.shown ? 1 : 0;
+        animate opacity { duration: Theme.still ? 0ms : 350ms; delay: 500ms; }
+    }
+    Text {
+        text: Tip.big-amount;
+        font-family: Theme.strong-font;
+        font-size: 56px;
+        color: Theme.fg;
+        horizontal-alignment: center;
+        accessible-role: text;
+        accessible-label: Tip.big-amount + " " + Tip.big-sats;
+        opacity: root.shown ? 1 : 0;
+        animate opacity { duration: Theme.still ? 0ms : 350ms; delay: 600ms; }
+    }
+    if Tip.big-sats != "": Text {
+        text: Tip.big-sats;
+        font-size: 14px;
+        color: Theme.fg;
+        horizontal-alignment: center;
+    }
+    Rectangle { height: 6px; }
+    Text {
+        text: @tr("You’re making Tawny better for everyone.");
+        font-size: 15px;
+        color: Theme.dim;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+        opacity: root.shown ? 1 : 0;
+        animate opacity { duration: Theme.still ? 0ms : 350ms; delay: 700ms; }
+    }
+    Rectangle { height: 16px; }
+    done := PrimaryButton {
+        text: @tr("Done");
+        clicked => { Tip.close(); }
+    }
+}

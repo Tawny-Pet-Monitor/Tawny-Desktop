@@ -1,0 +1,63 @@
+[package]
+name = "tawny-desktop"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.95"
+description = "Tawny for Linux and Windows: the pet monitor, native, on the Tawny core."
+license = "MIT"
+publish = false
+
+# Installed as `tawny`, as today's Desktop: the desktop entry, the window
+# class and the tawny:// handler all name it so.
+[[bin]]
+name = "tawny"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+cpal = "0.15"
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+slint = { version = "=1.19.0", default-features = false, features = [
+  "std",
+  "compat-1-2",
+  "accessibility",
+  "backend-winit",
+  "renderer-femtovg",
+  "renderer-software",
+] }
+getrandom = "0.3"
+rqrr = "0.9"
+rusty-leveldb = "3"
+qrcode = { version = "0.14", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tawny-core = { path = "../core", features = ["engine"] }
+lewton = "0.10"
+libwebrtc = "=0.4.2"
+nokhwa = { version = "0.10", default-features = false, features = ["input-native"] }
+zune-jpeg = "0.4"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+tiny-skia = "0.11"
+
+[build-dependencies]
+cc = "1"
+slint-build = "=1.19.0"
+
+[lints.clippy]
+all = { level = "deny", priority = 10 }
+pedantic = { level = "warn", priority = 3 }
+unwrap_used = "deny"
+expect_used = "deny"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

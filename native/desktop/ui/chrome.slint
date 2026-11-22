@@ -1,0 +1,239 @@
+// The frame every app screen shares (web/style.css .appbar, .wrap).
+
+import { Theme } from "theme.slint";
+
+// 48 px round key in the bar: back, or an action (berry).
+export component BarKey inherits Rectangle {
+    in property <string> label;
+    in property <string> path;        // an SVG path in a 24×24 box, stroked
+    in property <bool> action: false;
+    // Drawn solid instead of stroked (the Support heart), in `tint`.
+    in property <bool> filled: false;
+    in property <color> tint: action ? Theme.berry : Theme.fg;
+    // How big the glyph is drawn, 1 = 22 px (the heart beats).
+    in property <float> beat: 1;
+    callback clicked();
+
+    width: 48px;
+    height: 48px;
+    border-radius: 24px;
+    background: touch.pressed ? Theme.berry.transparentize(0.84) : touch.has-hover ? Theme.raise : transparent;
+    animate background { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: label;
+    accessible-action-default => { clicked(); }
+    forward-focus: focus;
+
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == "\n") { root.clicked(); return accept; }
+            reject
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    Path {
+        width: 22px * root.beat;
+        height: 22px * root.beat;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: root.path;
+        stroke: root.filled ? transparent : touch.pressed ? Theme.berry : root.tint;
+        stroke-width: 2.2px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        fill: root.filled ? root.tint : transparent;
+    }
+    Rectangle {
+        border-radius: 24px;
+        border-width: focus.has-focus ? 2px : 0;
+        border-color: Theme.berry;
+    }
+}
+
+export global Glyph {
+    out property <string> back: "M15 4.5 7.8 12 15 19.5";
+    out property <string> go: "M9 4.5 16.2 12 9 19.5";
+    out property <string> plus: "M12 5.5v13M5.5 12h13";
+    out property <string> heart: "M12 20.3C6.2 16.1 3 12.9 3 9.3 3 6.6 5.1 4.6 7.6 4.6c1.8 0 3.3 1 4.4 2.5 1.1-1.5 2.6-2.5 4.4-2.5 2.5 0 4.6 2 4.6 4.7 0 3.6-3.2 6.8-9 11z";
+    out property <string> more: "M10.1 5.2a1.9 1.9 0 1 0 3.8 0a1.9 1.9 0 1 0 -3.8 0Z M10.1 12a1.9 1.9 0 1 0 3.8 0a1.9 1.9 0 1 0 -3.8 0Z M10.1 18.8a1.9 1.9 0 1 0 3.8 0a1.9 1.9 0 1 0 -3.8 0Z";
+    // The channel avatar's cat face (32×32, even-odd).
+    out property <string> paw: "M5 3 C 2 10 3 18 13 18 C 12 11 10 6 5 3 Z M27 3 C 30 10 29 18 19 18 C 20 11 22 6 27 3 Z M16 9 C 24 9 29 14 29 21 C 29 27 24 31 16 31 C 8 31 3 27 3 21 C 3 14 8 9 16 9 Z M7.6 19 a3.4 3.4 0 1 0 6.8 0 a3.4 3.4 0 1 0 -6.8 0 Z M17.6 19 a3.4 3.4 0 1 0 6.8 0 a3.4 3.4 0 1 0 -6.8 0 Z";
+}
+
+// The page's heartbeats (style.css @keyframes), as a scale over time.
+export global Beat {
+    // A double thump now and then (heart-idle: 9 s, after 3 s).
+    pure public function idle(t: duration) -> float {
+        return Theme.still ? 1 : Beat.keys(mod((t - 3s) / 9s + 9, 1), [0.88, 0.90, 0.92, 0.94, 0.96], [1, 1.22, 1.02, 1.14, 1]);
+    }
+    // One soft beat (heart-soft: 2.8 s, after 1 s).
+    pure public function soft(t: duration) -> float {
+        return Theme.still ? 1 : Beat.keys(mod((t - 1s) / 2.8s + 9, 1), [0.70, 0.80, 0.90, 1.0], [1, 1.18, 1.04, 1]);
+    }
+    // Eased steps between keyframes; 1 before the first.
+    pure public function keys(u: float, at: [float], v: [float]) -> float {
+        if (u <= at[0]) { return v[0]; }
+        if (u <= at[1]) { return Beat.ease(u, at[0], at[1], v[0], v[1]); }
+        if (u <= at[2]) { return Beat.ease(u, at[1], at[2], v[1], v[2]); }
+        if (u <= at[3]) { return Beat.ease(u, at[2], at[3], v[2], v[3]); }
+        if (at.length > 4 && u <= at[4]) { return Beat.ease(u, at[3], at[4], v[3], v[4]); }
+        return v[v.length - 1];
+    }
+    pure function ease(u: float, a: float, b: float, from: float, to: float) -> float {
+        let x = (u - a) / (b - a);
+        return from + (to - from) * x * x * (3 - 2 * x);
+    }
+}
+
+// The page-level theme key (#theme-toggle): top right on every screen, cycles
+// follow-the-system → light → dark.
+export component ThemeToggle inherits Rectangle {
+    // The theme was switched: what it is now, to say in a toast.
+    callback changed(string);
+
+    width: 34px;
+    height: 34px;
+    border-radius: 17px;
+    background: Theme.panel.with-alpha(0.92);
+    border-width: 1px;
+    border-color: touch.has-hover || focus.has-focus ? Theme.berry : Theme.line;
+    animate border-color { duration: Theme.quick; }
+    accessible-role: button;
+    // What it is now, in the words the toast says it.
+    out property <string> now-label: Theme.mode == "dark" ? @tr("Theme: dark") : Theme.mode == "light" ? @tr("Theme: light") : @tr("Theme: follow system");
+    accessible-label: @tr("Change theme") + " — " + self.now-label;
+    accessible-action-default => { self.cycle(); }
+    forward-focus: focus;
+
+    function cycle() {
+        Theme.mode = Theme.mode == "system" ? "light" : Theme.mode == "light" ? "dark" : "system";
+        root.changed(root.now-label);
+    }
+    property <color> ink: touch.has-hover ? Theme.berry : Theme.dim;
+
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == "\n") { root.cycle(); return accept; }
+            reject
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.cycle(); }
+    }
+    // ◐ follow the system: a ring, its left half filled.
+    if Theme.mode != "light" && Theme.mode != "dark": Path {
+        width: 16px; height: 16px;
+        viewbox-width: 16; viewbox-height: 16;
+        commands: "M8 1.5a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0 -13Z";
+        stroke: root.ink;
+        stroke-width: 1.5px;
+        fill: transparent;
+    }
+    if Theme.mode != "light" && Theme.mode != "dark": Path {
+        width: 16px; height: 16px;
+        viewbox-width: 16; viewbox-height: 16;
+        commands: "M8 1.5a6.5 6.5 0 0 0 0 13Z";
+        fill: root.ink;
+    }
+    // ☀ light: a sun with eight short rays.
+    if Theme.mode == "light": Path {
+        width: 18px; height: 18px;
+        viewbox-width: 18; viewbox-height: 18;
+        commands: "M9 5.6a3.4 3.4 0 1 0 0 6.8a3.4 3.4 0 1 0 0 -6.8Z M9 1.2v1.8 M9 15v1.8 M1.2 9h1.8 M15 9h1.8 M3.5 3.5l1.3 1.3 M13.2 13.2l1.3 1.3 M3.5 14.5l1.3 -1.3 M13.2 4.8l1.3 -1.3";
+        stroke: root.ink;
+        stroke-width: 1.5px;
+        stroke-line-cap: round;
+        fill: transparent;
+    }
+    // ☾ dark: a crescent.
+    if Theme.mode == "dark": Path {
+        width: 16px; height: 16px;
+        viewbox-width: 16; viewbox-height: 16;
+        commands: "M10.6 1.6A6.6 6.6 0 1 0 14.4 10.4A5.2 5.2 0 0 1 10.6 1.6Z";
+        fill: root.ink;
+    }
+}
+
+// The page toast (.toast): a pill near the bottom that says what just
+// happened, then goes.
+export component Toast inherits Rectangle {
+    in-out property <string> text;
+    in property <duration> lasts: 2.6s;
+
+    visible: text != "";
+    width: min(label.preferred-width + 38px, 420px);
+    height: 38px;
+    border-radius: 19px;
+    background: Theme.raise;
+    border-width: 1px;
+    border-color: Theme.line;
+    drop-shadow-color: #0c0d1240;
+    drop-shadow-blur: 14px;
+    drop-shadow-offset-y: 6px;
+    accessible-role: AccessibleRole.text;
+    accessible-label: text;
+    label := Text {
+        text: root.text;
+        font-size: 12px;
+        color: Theme.fg;
+        overflow: elide;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    Timer {
+        interval: root.lasts;
+        running: root.text != "";
+        triggered => { root.text = ""; }
+    }
+}
+
+// The bar: back key, a title and its line, room on the right.
+export component AppBar inherits Rectangle {
+    in property <string> title;
+    in property <string> sub;
+    in property <bool> back: true;
+    in property <string> back-label: @tr("Back");
+    callback go-back();
+
+    // The page's bar: 48 px keys in 6 px of padding, the two lines set high.
+    height: 60px;
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 54px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 8px;
+        if root.back: BarKey {
+            label: root.back-label;
+            path: Glyph.back;
+            clicked => { root.go-back(); }
+        }
+        VerticalLayout {
+            alignment: start;
+            padding-top: 1px;
+            Text {
+                height: 24px;
+                vertical-alignment: center;
+                text: root.title;
+                font-family: Theme.strong-font;
+                font-size: 20px;
+                color: Theme.fg;
+                overflow: elide;
+                accessible-role: text;
+            }
+            if root.sub != "": Text {
+                height: 18px;
+                vertical-alignment: center;
+                text: root.sub;
+                font-size: 12.5px;
+                letter-spacing: 0.5px;
+                color: Theme.dim;
+                overflow: elide;
+            }
+        }
+    }
+}

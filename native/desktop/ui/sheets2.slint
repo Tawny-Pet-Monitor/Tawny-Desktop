@@ -1,0 +1,812 @@
+// The rest of the sheets: who is here, my name, pairing a Viewer, the
+// scanner, the relay settings and their test, the update board, and the
+// Support hub.
+
+import { Theme } from "theme.slint";
+import { Beat, Glyph } from "chrome.slint";
+import { GhostButton, PrimaryButton, LinkButton } from "widgets.slint";
+import { Sheet, Field, Hint } from "sheets.slint";
+import { Tip, TipPick, TipThanks } from "tip.slint";
+
+// One device in the call, as the who-is-here sheet lists it.
+export struct WhoEntry {
+    // What its owner calls it, or "" for none given.
+    name: string,
+    // The device's own short name ("Pixel 8", "Desktop").
+    device: string,
+    // "station" or "viewer".
+    role: string,
+    you: bool,
+    // The badge's letter: the first of the name, else of the device.
+    initial: string,
+}
+
+// A relay and how it answered the last test.
+export struct RelayCheck {
+    url: string,
+    // "ok", "refused", "no-echo", or "" (not tried yet).
+    state: string,
+}
+
+// A two-key row at the foot of a sheet.
+component Pair2 inherits HorizontalLayout {
+    in property <string> left;
+    in property <string> right;
+    in property <bool> right-primary: true;
+    in property <bool> right-enabled: true;
+    // A plain key on the right (".wide") is filled; a ghost is outlined.
+    in property <bool> right-solid: true;
+    callback left-clicked();
+    callback right-clicked();
+    spacing: 9px;
+    GhostButton {
+        width: (root.width - 9px) / 2;
+        text: root.left;
+        clicked => { root.left-clicked(); }
+    }
+    if root.right-primary: PrimaryButton {
+        width: (root.width - 9px) / 2;
+        text: root.right;
+        enabled: root.right-enabled;
+        clicked => { root.right-clicked(); }
+    }
+    if !root.right-primary: GhostButton {
+        width: (root.width - 9px) / 2;
+        solid: root.right-solid;
+        text: root.right;
+        clicked => { root.right-clicked(); }
+    }
+}
+
+// Who's here (#who): everyone in the call, this device marked.
+export component WhoSheet inherits Sheet {
+    in property <[WhoEntry]> entries;
+    // A Viewer whose Monitor never sent the list: it is on an older Tawny.
+    in property <bool> old-monitor;
+    callback rename();
+    title: @tr("Who’s here");
+    VerticalLayout {
+        spacing: 4px;
+        for e in root.entries: Rectangle {
+            min-height: 58px;
+            border-radius: Theme.r-ctl;
+            background: e.you ? Theme.raise : transparent;
+            accessible-role: text;
+            accessible-label: (e.name != "" ? e.name : @tr("No name given")) + ", " + (e.role == "station" ? @tr("Monitor") : @tr("Viewer")) + (e.you ? ", " + @tr("You") : "");
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 8px;
+                padding-bottom: 8px;
+                spacing: 13px;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 38px;
+                        height: 38px;
+                        border-radius: 19px;
+                        background: e.role == "station" ? Theme.berry : Theme.fg.mix(Theme.panel, 0.46);
+                        Text {
+                            text: e.initial != "" ? e.initial : "?";
+                            font-family: Theme.strong-font;
+                            font-size: 16px;
+                            color: e.role == "station" ? Theme.on-accent : #ffffff;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text {
+                        text: e.name != "" ? e.name : @tr("No name given");
+                        font-family: e.name != "" ? Theme.strong-font : Theme.text-font;
+                        font-italic: e.name == "";
+                        font-size: 16px;
+                        color: e.name != "" ? Theme.fg : Theme.dim;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: (e.role == "station" ? @tr("Monitor") : @tr("Viewer")) + (e.device != "" ? " · " + e.device : "");
+                        font-size: 13px;
+                        color: Theme.dim;
+                        overflow: elide;
+                    }
+                }
+                if e.you: Text {
+                    text: @tr("You").to-uppercase();
+                    font-family: Theme.strong-font;
+                    font-size: 11px;
+                    letter-spacing: 0.7px;
+                    color: Theme.dark ? Theme.berry : Theme.berry-d;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    if root.old-monitor: Hint {
+        text: @tr("The Monitor is on an older Tawny, so it can’t share who else is watching.");
+    }
+    Pair2 {
+        left: @tr("Change my name");
+        right: @tr("Done");
+        left-clicked => { root.rename(); }
+        right-clicked => { root.dismiss(); }
+    }
+}
+
+// "What should the others call you?" (#myname).
+export component MyNameSheet inherits Sheet {
+    in-out property <string> name;
+    callback save(string);
+    title: @tr("What should the others call you?");
+    field := Field {
+        label: @tr("Your name");
+        text <=> root.name;
+        accepted => { root.save(root.name); }
+    }
+    Hint {
+        text: @tr("Everyone on this camera sees it next to this device. Leave it empty to show just the device.");
+    }
+    Pair2 {
+        left: @tr("Not now");
+        right: @tr("Save");
+        left-clicked => { root.dismiss(); }
+        right-clicked => { root.save(root.name); }
+    }
+    init => { field.focus(); }
+}
+
+// Pair a Viewer (#pair): the channel's code, how long it lasts, the link.
+export component PairSheet inherits Sheet {
+    in property <string> channel;
+    in property <image> qr;
+    in property <string> expiry;
+    in property <string> link;
+    callback copy();
+    title: @tr("Pair a Viewer");
+    Hint {
+        text: @tr("Point your phone’s camera at this code. It opens Tawny already joined to {}.", root.channel);
+    }
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            width: 292px;
+            height: 292px;
+            background: #ffffff;
+            border-radius: Theme.r-card;
+            border-width: 1px;
+            border-color: Theme.line;
+            Image {
+                x: 14px; y: 14px;
+                width: parent.width - 28px;
+                height: parent.height - 28px;
+                source: root.qr;
+                image-rendering: pixelated;
+                accessible-role: image;
+                accessible-label: @tr("Pairing code");
+            }
+        }
+    }
+    if root.expiry != "": Hint {
+        text: root.expiry;
+        font-size: 14px;
+        horizontal-alignment: center;
+    }
+    Rectangle {
+        border-radius: Theme.r-ctl;
+        border-width: 1px;
+        border-color: Theme.line;
+        background: Theme.bg;
+        VerticalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+            Text {
+                text: root.link;
+                font-size: 10.5px;
+                color: Theme.dim;
+                wrap: char-wrap;
+                accessible-role: text;
+            }
+        }
+    }
+    Pair2 {
+        left: @tr("Copy link");
+        right: @tr("Done");
+        right-primary: false;
+        left-clicked => { root.copy(); }
+        right-clicked => { root.dismiss(); }
+    }
+}
+
+// Scan pairing code (#scanner): the camera, a reticle, and a way round it.
+export component ScannerSheet inherits Sheet {
+    in property <image> preview;
+    in property <bool> has-preview;
+    in property <string> hint: @tr("Hold the Monitor’s code in frame.");
+    callback paste();
+    title: @tr("Scan pairing code");
+    frame := Rectangle {
+        height: self.width;
+        border-radius: Theme.r-card;
+        border-width: 1px;
+        border-color: Theme.line;
+        background: #000000;
+        clip: true;
+        if root.has-preview: Image {
+            width: 100%;
+            height: 100%;
+            source: root.preview;
+            image-fit: cover;
+            accessible-role: image;
+            accessible-label: @tr("Camera");
+        }
+        // Dim round the reticle, and the reticle itself, breathing.
+        Rectangle {
+            property <length> inset: parent.width * 0.15;
+            Rectangle { y: 0; height: parent.inset; background: #0000004d; }
+            Rectangle { y: parent.height - parent.inset; height: parent.inset; background: #0000004d; }
+            Rectangle {
+                x: 0; y: parent.inset; width: parent.inset; height: parent.height - parent.inset * 2;
+                background: #0000004d;
+            }
+            Rectangle {
+                x: parent.width - parent.inset; y: parent.inset; width: parent.inset; height: parent.height - parent.inset * 2;
+                background: #0000004d;
+            }
+            Rectangle {
+                x: parent.inset; y: parent.inset;
+                width: parent.width - parent.inset * 2; height: parent.height - parent.inset * 2;
+                border-radius: 16px;
+                border-width: 2px;
+                border-color: Theme.berry.transparentize(0.15);
+                opacity: Theme.still ? 1 : 0.8 + 0.2 * sin(360deg * mod(animation-tick() / 2.4s, 1));
+            }
+        }
+    }
+    Hint {
+        text: root.hint;
+    }
+    Pair2 {
+        left: @tr("Paste link instead");
+        right: @tr("Cancel");
+        right-primary: false;
+        right-solid: false;
+        left-clicked => { root.paste(); }
+        right-clicked => { root.dismiss(); }
+    }
+}
+
+// The dot beside a relay in a test (".relay-health li").
+component RelayLine inherits HorizontalLayout {
+    in property <RelayCheck> check;
+    spacing: 8px;
+    VerticalLayout {
+        padding-top: 6px;
+        alignment: start;
+        Rectangle {
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            border-width: 1.5px;
+            border-color: root.check.state == "ok" ? (Theme.dark ? #8a9770 : #41708f) : root.check.state == "" ? Theme.dim : Theme.live-ink;
+            background: root.check.state == "" ? transparent : self.border-color;
+        }
+    }
+    Text {
+        text: root.check.url;
+        font-size: 14px;
+        color: root.check.state == "ok" ? Theme.fg : Theme.dim;
+        wrap: char-wrap;
+        horizontal-stretch: 1;
+    }
+}
+
+// Servers (#servers): the user's own Nostr relays, and "only mine".
+export component ServersSheet inherits Sheet {
+    in-out property <string> relays;
+    in-out property <bool> only;
+    in property <[RelayCheck]> health;
+    in property <string> note;
+    callback save(string, bool);
+    title: @tr("Servers");
+    VerticalLayout {
+        spacing: 8px;
+        Text {
+            text: @tr("Nostr relays").to-uppercase();
+            font-size: 11px;
+            letter-spacing: 2px;
+            color: Theme.dim;
+        }
+        Rectangle {
+            min-height: 92px;
+            border-radius: Theme.r-ctl;
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: box.has-focus ? Theme.berry : Theme.line;
+            Rectangle {
+                x: -3px; y: -3px; width: parent.width + 6px; height: parent.height + 6px;
+                border-radius: Theme.r-ctl + 3px;
+                border-width: box.has-focus ? 2px : 0;
+                border-color: Theme.berry.transparentize(0.7);
+            }
+            VerticalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                box := TextInput {
+                    text <=> root.relays;
+                    single-line: false;
+                    wrap: char-wrap;
+                    font-size: 14px;
+                    color: Theme.fg;
+                    selection-background-color: Theme.berry.transparentize(0.7);
+                    accessible-label: @tr("Nostr relays");
+                }
+            }
+        }
+    }
+    Hint {
+        text: @tr("How your devices find each other. List your own relays (up to 5, one per line) to use only those. A relay only ever sees sealed envelopes: never your video, never your pairing key.");
+    }
+    if root.health.length > 0: VerticalLayout {
+        spacing: 6px;
+        Text {
+            text: @tr("Last check on this computer");
+            font-family: Theme.strong-font;
+            font-size: 15px;
+            color: Theme.fg;
+        }
+        for c in root.health: RelayLine { check: c; }
+    }
+    Rectangle { height: 1px; background: Theme.line; }
+    // "Use only my relays": a real checkbox, its consequence beside it.
+    only-row := Rectangle {
+        accessible-role: checkbox;
+        accessible-checked: root.only;
+        accessible-label: @tr("Use only my relays");
+        accessible-action-default => { root.only = !root.only; }
+        forward-focus: only-focus;
+        only-focus := FocusScope {
+            key-pressed(e) => {
+                if (e.text == " ") { root.only = !root.only; return accept; }
+                reject
+            }
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.only = !root.only; }
+        }
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                alignment: start;
+                padding-top: 1px;
+                Rectangle {
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 4px;
+                    border-width: root.only ? 0 : 1.5px;
+                    border-color: Theme.dim;
+                    background: root.only ? (Theme.dark ? #8a9770 : #41708f) : Theme.panel;
+                    if root.only: Path {
+                        width: 16px;
+                        height: 16px;
+                        viewbox-width: 24;
+                        viewbox-height: 24;
+                        commands: "M5 12.5l4.5 4.5L19 7.5";
+                        stroke: #ffffff;
+                        stroke-width: 2.4px;
+                        stroke-line-cap: round;
+                        stroke-line-join: round;
+                        fill: transparent;
+                    }
+                    Rectangle {
+                        x: -4px; y: -4px; width: parent.width + 8px; height: parent.height + 8px;
+                        border-radius: 7px;
+                        border-width: only-focus.has-focus ? 2px : 0;
+                        border-color: Theme.dark ? #8a9770 : #41708f;
+                    }
+                }
+            }
+            VerticalLayout {
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Text {
+                    text: @tr("Use only my relays");
+                    font-family: Theme.strong-font;
+                    font-size: 15px;
+                    color: Theme.fg;
+                }
+                Text {
+                    text: @tr("Turns off Tawny’s backup server too. Your relays are tested before this is switched on.");
+                    font-size: 14px;
+                    color: Theme.dim;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+    if root.note != "": Rectangle {
+        border-radius: Theme.r-chip;
+        border-width: 1px;
+        border-color: Theme.live.mix(Theme.line, 0.35);
+        background: Theme.live.mix(Theme.panel, 0.12);
+        VerticalLayout {
+            padding-left: 14px;
+            padding-right: 14px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+            Text {
+                text: root.note;
+                font-size: 12.5px;
+                color: Theme.fg;
+                wrap: word-wrap;
+                accessible-role: text;
+            }
+        }
+    }
+    Pair2 {
+        left: @tr("Cancel");
+        right: @tr("Save");
+        left-clicked => { root.dismiss(); }
+        right-clicked => { root.save(root.relays, root.only); }
+    }
+}
+
+// "Use only my relays" (#only): the test, its verdict, and the terms.
+export component OnlySheet inherits Sheet {
+    in property <[RelayCheck]> checks;
+    in property <string> verdict;
+    // Every relay passed: the terms show and the key unlocks.
+    in property <bool> passed;
+    callback confirm();
+    title: @tr("Use only my relays");
+    VerticalLayout {
+        spacing: 6px;
+        Text {
+            text: @tr("Test from this computer, just now");
+            font-family: Theme.strong-font;
+            font-size: 15px;
+            color: Theme.fg;
+        }
+        for c in root.checks: RelayLine { check: c; }
+    }
+    if root.verdict != "": Hint { text: root.verdict; }
+    if root.passed: VerticalLayout {
+        spacing: 8px;
+        for term in [
+            @tr("No backup. If your relays are down or out of reach, your devices do not connect until they are back."),
+            @tr("Every device needs the same relays. Set them on the phone too (Diagnostics, then Servers), or the two will never meet."),
+            @tr("Tawny’s video relay is switched off with it. Away from home, video then needs a direct connection or a video relay of your own."),
+            @tr("To undo it, clear the tick in Servers and save."),
+        ]: HorizontalLayout {
+            spacing: 10px;
+            Text { text: "•"; font-size: 14px; color: Theme.fg; }
+            Text {
+                text: term;
+                font-size: 14px;
+                color: Theme.fg;
+                wrap: word-wrap;
+                horizontal-stretch: 1;
+            }
+        }
+    }
+    if !root.passed: GhostButton {
+        text: @tr("Keep the backup");
+        clicked => { root.dismiss(); }
+    }
+    if root.passed: Pair2 {
+        left: @tr("Keep the backup");
+        right: @tr("Use only my relays");
+        left-clicked => { root.dismiss(); }
+        right-clicked => { root.confirm(); }
+    }
+}
+
+// The update board (#whatsnew): once per version, what is new.
+export component WhatsNewSheet inherits Sheet {
+    in property <string> version;
+    in property <[string]> notes;
+    in property <bool> has-changelog;
+    callback changelog();
+    callback support();
+    title: "";
+    VerticalLayout {
+        alignment: start;
+        spacing: 0;
+        HorizontalLayout {
+            alignment: center;
+            padding-top: 10px;
+            Path {
+                width: 40px;
+                height: 40px;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: "M12 2.6l2.7 6 6.6.6-5 4.4 1.5 6.5L12 16.7l-5.8 3.4 1.5-6.5-5-4.4 6.6-.6Z";
+                fill: Theme.berry;
+            }
+        }
+        if root.version != "": Text {
+            text: @tr("Version {}", root.version).to-uppercase();
+            font-family: Theme.strong-font;
+            font-size: 12px;
+            letter-spacing: 1.9px;
+            color: Theme.dim;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: @tr("Tawny just got better");
+            font-family: Theme.display-font;
+            font-size: 30px;
+            color: Theme.fg;
+            horizontal-alignment: center;
+            accessible-role: text;
+        }
+        Rectangle { height: 16px; }
+        Rectangle {
+            border-radius: 11px;
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: Theme.line;
+            VerticalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-top: 8px;
+                padding-bottom: 8px;
+                for n in root.notes: HorizontalLayout {
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    spacing: 10px;
+                    Text { text: "✦"; font-size: 15px; color: Theme.berry; }
+                    Text {
+                        text: n;
+                        font-size: 15px;
+                        color: Theme.fg;
+                        wrap: word-wrap;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+        }
+        if root.has-changelog: HorizontalLayout {
+            alignment: center;
+            padding-top: 12px;
+            LinkButton {
+                accent: true;
+                text: @tr("Read the full changelog") + " ↗";
+                clicked => { root.changelog(); }
+            }
+        }
+        Rectangle { height: 10px; }
+        Text {
+            text: @tr("Thank you for supporting Tawny. It stays free for everyone because of people like you.");
+            font-size: 15px;
+            color: Theme.dim;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+        }
+        // The Support pill: ink, with the red heart beating.
+        HorizontalLayout {
+            alignment: center;
+            padding-top: 16px;
+            pill := Rectangle {
+                width: pill-row.preferred-width;
+                height: 44px;
+                border-radius: 22px;
+                background: pill-touch.pressed ? Theme.fg.mix(Theme.bg, 0.88) : Theme.fg;
+                accessible-role: button;
+                accessible-label: @tr("Support Tawny");
+                accessible-action-default => { root.support(); }
+                pill-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.support(); }
+                }
+                pill-row := HorizontalLayout {
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 16px;
+                            height: 16px;
+                            Path {
+                                property <float> beat: Beat.soft(animation-tick());
+                                width: 16px * self.beat;
+                                height: 16px * self.beat;
+                                viewbox-width: 24;
+                                viewbox-height: 24;
+                                commands: Glyph.heart;
+                                fill: #e0344f;
+                            }
+                        }
+                    }
+                    Text {
+                        text: @tr("Support Tawny");
+                        font-family: Theme.strong-font;
+                        font-size: 14px;
+                        color: Theme.bg;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+        Rectangle { height: 18px; }
+        PrimaryButton {
+            text: @tr("Let’s go");
+            clicked => { root.dismiss(); }
+        }
+    }
+}
+
+// One of the Support hub's two picture cards: a plate, a title, a line.
+component HubCard inherits VerticalLayout {
+    in property <string> title;
+    in property <string> line;
+    callback clicked();
+    spacing: 6px;
+    alignment: start;
+    plate := Rectangle {
+        height: 158px;
+        border-radius: 14px;
+        background: Theme.berry.mix(Theme.raise, 0.09);
+        drop-shadow-color: touch.has-hover ? #0000001c : transparent;
+        drop-shadow-blur: 8px;
+        drop-shadow-offset-y: 3px;
+        animate drop-shadow-color { duration: 200ms; }
+        accessible-role: button;
+        accessible-label: root.title;
+        accessible-action-default => { root.clicked(); }
+        touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.clicked(); }
+        }
+        @children
+    }
+    Text {
+        text: root.title;
+        font-family: Theme.strong-font;
+        font-size: 16px;
+        color: Theme.fg;
+    }
+    Text {
+        text: root.line;
+        font-size: 14px;
+        color: Theme.dim;
+        wrap: word-wrap;
+    }
+}
+
+// Support Tawny (#tip, its hub): the trio on a stage, a coffee, a tip.
+export component SupportSheet inherits Sheet {
+    in property <image> scene;
+    out property <length> scene-width: 330px;
+    out property <length> scene-height: 236px;
+    callback scene-tapped(length, length, length, length);
+    callback kofi();
+    callback lightning();
+    title: "";
+    // Its three pages: the hub, the Lightning page, the thank-you.
+    if Tip.page == "pick": TipPick { }
+    if Tip.page == "thanks": TipThanks { }
+    if Tip.page == "hub": VerticalLayout {
+    spacing: 13px;
+    // The trio's plate: the picture leads, as a photo would.
+    Rectangle {
+        height: max(150px, self.width * 7 / 16);
+        border-radius: 14px;
+        background: Theme.berry.mix(Theme.raise, 0.09);
+        clip: true;
+        stage-art := Image {
+            width: 330px;
+            height: 236px;
+            x: (parent.width - self.width) / 2;
+            y: parent.height - self.height + 14px;
+            source: root.scene;
+            accessible-role: image;
+            accessible-label: "A cat, Tawny the owlet and a dog";
+            TouchArea {
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down) {
+                        root.scene-tapped(self.mouse-x, self.mouse-y, self.width, self.height);
+                    }
+                }
+            }
+        }
+    }
+    Text {
+        text: @tr("Support Tawny");
+        font-family: Theme.display-font;
+        font-size: 34px;
+        color: Theme.fg;
+        accessible-role: text;
+    }
+    Text {
+        text: @tr("Tawny is free, has no ads and doesn’t collect anything about you. If you enjoy it, you can help keep it that way.");
+        font-size: 16px;
+        color: Theme.fg;
+        wrap: word-wrap;
+    }
+    hub-row := HorizontalLayout {
+        spacing: 12px;
+        HubCard {
+            width: (hub-row.width - 12px) / 2;
+            title: @tr("Buy a coffee");
+            line: @tr("Card or PayPal on Ko-fi") + " ↗";
+            clicked => { root.kofi(); }
+            // A mug with a heart on it, steam rising.
+            Rectangle {
+                property <length> s: 132px / 80;
+                width: 80 * self.s;
+                height: 80 * self.s;
+                for i in 3: Path {
+                    property <float> u: Theme.still ? 0.35 : mod((animation-tick() - i * 0.85s) / 2.6s + 9, 1);
+                    width: parent.width;
+                    height: parent.height;
+                    y: (Theme.still ? 0 : 6 - 14 * self.u) * parent.s;
+                    viewbox-width: 80;
+                    viewbox-height: 80;
+                    commands: "M" + (30 + i * 10) + " 22c-4-5 4-8 0-14";
+                    stroke: Theme.dim;
+                    stroke-width: 3.2 * parent.s;
+                    stroke-line-cap: round;
+                    fill: transparent;
+                    opacity: Theme.still ? 0.6 : Beat.keys(self.u, [0, 0.35, 1, 1], [0, 0.8, 0, 0]);
+                }
+                Path {
+                    width: parent.width;
+                    height: parent.height;
+                    viewbox-width: 80;
+                    viewbox-height: 80;
+                    commands: "M16 28h48v22a18 18 0 0 1-18 18H34a18 18 0 0 1-18-18Z M64 33h4a9 9 0 0 1 0 18h-4v-6h4a3 3 0 0 0 0-6h-4Z";
+                    fill: Theme.fg;
+                }
+                Path {
+                    width: parent.width;
+                    height: parent.height;
+                    viewbox-width: 80;
+                    viewbox-height: 80;
+                    commands: "M40 55c-6-4-9-7-9-10.5 0-2.6 2-4.5 4.4-4.5 1.9 0 3.4 1 4.6 2.6 1.2-1.6 2.7-2.6 4.6-2.6 2.4 0 4.4 1.9 4.4 4.5 0 3.5-3 6.5-9 10.5Z";
+                    fill: #e0344f;
+                }
+            }
+        }
+        HubCard {
+            width: (hub-row.width - 12px) / 2;
+            title: @tr("Tip in Bitcoin");
+            line: @tr("Over Lightning with any wallet, or on strike.me");
+            clicked => { root.lightning(); }
+            // The bolt in its orb: the accent's one round moment here.
+            Rectangle {
+                width: 94px;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: Theme.berry;
+                Path {
+                    width: parent.width * 0.56;
+                    height: self.width;
+                    viewbox-width: 80;
+                    viewbox-height: 80;
+                    commands: "M48 4 18 44h18l-6 32 32-42H44Z";
+                    fill: Theme.on-accent;
+                }
+            }
+        }
+    }
+    Text {
+        text: @tr("Thank you for being here.");
+        font-size: 14px;
+        color: Theme.dim;
+    }
+    LinkButton {
+        text: @tr("Not now");
+        clicked => { root.dismiss(); }
+    }
+    }
+}

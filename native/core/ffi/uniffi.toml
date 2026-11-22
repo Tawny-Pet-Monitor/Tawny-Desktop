@@ -1,0 +1,6 @@
+[bindings.kotlin]
+package_name = "com.tawny.core"
+cdylib_name = "tawny_ffi"
+
+[bindings.swift]
+module_name = "TawnyCore"

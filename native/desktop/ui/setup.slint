@@ -1,0 +1,55 @@
+// "This device: which job is it doing?" (web/index.html #setup-role), and the
+// same choice for a channel already paired (#role), in that screen's words.
+
+import { Theme } from "theme.slint";
+import { AppBar } from "chrome.slint";
+import { RoleCard, RoleKind } from "roles.slint";
+
+export component SetupRole inherits Rectangle {
+    in property <string> title: @tr("This device");
+    in property <string> sub: @tr("Which job is it doing?");
+    in property <string> back-label: @tr("Back");
+    in property <string> monitor-line: @tr("Stays with your pet");
+    in property <string> monitor-blurb: @tr("Plug it in and point the camera. It sends video and sound, answers on its own, and shows a code for the Viewer to scan.");
+    in property <string> viewer-line: @tr("Comes with you");
+    in property <string> viewer-blurb: @tr("See what the Monitor sees, listen in, hold to talk back, ring a chime, or save a snapshot.");
+    callback back();
+    callback monitor();
+    callback viewer();
+
+    VerticalLayout {
+        AppBar {
+            title: root.title;
+            sub: root.sub;
+            back-label: root.back-label;
+            go-back => { root.back(); }
+        }
+        HorizontalLayout {
+            alignment: center;
+            padding-left: 16px;
+            padding-right: 16px;
+            VerticalLayout {
+                preferred-width: 416px;
+                max-width: 416px;
+                padding-top: 16px;
+                padding-bottom: 28px;
+                spacing: 12px;
+                alignment: start;
+                RoleCard {
+                    kind: RoleKind.monitor;
+                    tag: @tr("The Monitor");
+                    line: root.monitor-line;
+                    blurb: root.monitor-blurb;
+                    clicked => { root.monitor(); }
+                }
+                RoleCard {
+                    kind: RoleKind.viewer;
+                    tag: @tr("The Viewer");
+                    line: root.viewer-line;
+                    blurb: root.viewer-blurb;
+                    clicked => { root.viewer(); }
+                }
+            }
+        }
+    }
+}

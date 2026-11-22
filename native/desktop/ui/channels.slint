@@ -1,0 +1,613 @@
+// The home screen (web/index.html #channels): this device's channels, the
+// way to join a Monitor, the fine print and the Support card.
+
+import { Theme } from "theme.slint";
+import { BarKey, Beat, Glyph } from "chrome.slint";
+import { GhostButton, PrimaryButton } from "widgets.slint";
+
+// One paired channel, as the list shows it.
+export struct Channel {
+    id: string,
+    // Already the shown name (shownName() in app.js).
+    name: string,
+    // The job this device last did on it: "station", "viewer" or "".
+    role: string,
+    // The first six characters of its key.
+    key: string,
+}
+
+// A small uppercase section title (".block-head h2").
+component BlockHead inherits Text {
+    font-family: Theme.strong-font;
+    font-size: 11.5px;
+    letter-spacing: 2px;
+    color: Theme.dim;
+    accessible-role: text;
+}
+
+// A pressable area with the page's keyboard focus ring.
+component Press inherits Rectangle {
+    in property <string> label;
+    in property <length> ring-radius: 0;
+    out property <bool> hovered: touch.has-hover;
+    out property <bool> pressed: touch.pressed;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: label;
+    accessible-action-default => { clicked(); }
+    forward-focus: focus;
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == "\n") { root.clicked(); return accept; }
+            reject
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    @children
+    Rectangle {
+        x: 2px; y: 2px;
+        width: parent.width - 4px; height: parent.height - 4px;
+        border-radius: root.ring-radius;
+        border-width: focus.has-focus ? 2px : 0;
+        border-color: Theme.berry;
+    }
+}
+
+// One row (".ch-row"): the whole card opens the channel; the trailing key
+// holds rename / pairing code / delete.
+component ChannelRow inherits Rectangle {
+    in property <Channel> ch;
+    callback open();
+    callback more();
+
+    min-height: 76px;
+    background: Theme.panel;
+    border-radius: Theme.r-card;
+    border-width: 1px;
+    border-color: open-key.hovered || more-key.hovered ? Theme.berry.mix(Theme.line, 0.55) : Theme.line;
+    animate border-color { duration: Theme.quick; }
+    clip: true;
+
+    HorizontalLayout {
+        open-key := Press {
+            horizontal-stretch: 1;
+            label: root.ch.name;
+            ring-radius: Theme.r-card - 2px;
+            background: self.pressed ? Theme.berry.transparentize(0.91) : transparent;
+            clicked => { root.open(); }
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 6px;
+                padding-top: 13px;
+                padding-bottom: 13px;
+                spacing: 13px;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 44px;
+                        height: 44px;
+                        border-radius: Theme.r-ctl;
+                        background: Theme.berry.mix(Theme.panel, 0.15);
+                        Path {
+                            width: 24px;
+                            height: 24px;
+                            viewbox-width: 32;
+                            viewbox-height: 32;
+                            commands: Glyph.paw;
+                            fill-rule: evenodd;
+                            fill: Theme.berry;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        height: 22px;
+                        vertical-alignment: center;
+                        text: root.ch.name;
+                        font-family: Theme.strong-font;
+                        font-size: 16.5px;
+                        color: Theme.fg;
+                        overflow: elide;
+                    }
+                    Text {
+                        height: 19px;
+                        vertical-alignment: center;
+                        text: root.ch.role == "station" ? @tr("Resume as Monitor")
+                            : root.ch.role == "viewer" ? @tr("Resume as Viewer")
+                            : @tr("Choose Monitor or Viewer");
+                        font-size: 12.5px;
+                        letter-spacing: 0.25px;
+                        color: Theme.berry;
+                        overflow: elide;
+                    }
+                    Text {
+                        height: 18px;
+                        vertical-alignment: center;
+                        text: @tr("key {}…", root.ch.key);
+                        font-size: 11px;
+                        letter-spacing: 0.9px;
+                        color: Theme.dim;
+                    }
+                }
+                Rectangle {
+                    width: 22px;
+                    Path {
+                        x: open-key.hovered ? 5.5px : 3.5px;
+                        animate x { duration: Theme.quick; easing: ease-out; }
+                        width: 15px;
+                        height: 15px;
+                        viewbox-width: 24;
+                        viewbox-height: 24;
+                        commands: Glyph.go;
+                        stroke: open-key.hovered ? Theme.berry : Theme.dim;
+                        stroke-width: 1.6px;
+                        stroke-line-cap: round;
+                        stroke-line-join: round;
+                        fill: transparent;
+                    }
+                }
+            }
+        }
+        Rectangle { width: 1px; background: Theme.line; }
+        more-key := Press {
+            width: 49px;
+            label: @tr("Options for {}", root.ch.name);
+            ring-radius: Theme.r-ctl;
+            background: self.pressed ? Theme.berry.transparentize(0.84) : self.hovered ? Theme.raise : transparent;
+            animate background { duration: Theme.quick; }
+            clicked => { root.more(); }
+            Path {
+                width: 20px;
+                height: 20px;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: Glyph.more;
+                fill: more-key.hovered || more-key.pressed ? Theme.berry : Theme.dim;
+            }
+        }
+    }
+}
+
+// The cat asleep on an empty list (".doze"): it breathes, its tail flicks
+// now and then, and z's drift up. Drawn in the SVG's 160×110 units.
+component DozeCat inherits Rectangle {
+    property <float> k: self.width / 160px;
+    property <duration> t: Theme.still ? 0ms : animation-tick();
+    // doze-breathe: 4.4 s, a 2.5 % rise from the floor.
+    property <float> b: 1 + 0.025 * (0.5 - 0.5 * cos(360deg * mod(t / 4.4s, 1)));
+    // doze-flick: 6 s, a flick back and a settle.
+    property <angle> flick: Beat.keys(mod(t / 6s, 1), [0.78, 0.86, 0.93, 1.0], [0, -9, 4, 0]) * 1deg;
+    property <color> fill: Theme.berry.mix(Theme.panel, 0.15);
+    property <color> ink: Theme.berry.transparentize(0.4);
+
+    // Breathing scales the cat up from its floor line (y = 92).
+    pure function fy(v: float) -> float { return 92 - (92 - v) * b; }
+    // The tail turns about its root.
+    pure function tx(px: float, py: float) -> float {
+        return 126 + (px - 126) * cos(flick) - (fy(py) - fy(86)) * sin(flick);
+    }
+    pure function ty(px: float, py: float) -> float {
+        return fy(86) + (px - 126) * sin(flick) + (fy(py) - fy(86)) * cos(flick);
+    }
+
+    width: 186px;
+    height: self.width * 110 / 160;
+    accessible-role: none;
+
+    // Its shadow on the floor.
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 160; viewbox-height: 110;
+        commands: "M34 93 a46 7 0 1 0 92 0 a46 7 0 1 0 -92 0 Z";
+        fill: Theme.fg.transparentize(0.91);
+    }
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 160; viewbox-height: 110;
+        commands: "M34 " + fy(92) + " C 30 " + fy(66) + " 48 " + fy(54) + " 74 " + fy(56)
+            + " C 104 " + fy(58) + " 124 " + fy(70) + " 126 " + fy(84)
+            + " C 127 " + fy(90) + " 120 " + fy(92) + " 112 " + fy(92) + " Z";
+        fill: root.fill;
+        stroke: root.ink;
+        stroke-width: 2.4px * root.k;
+        stroke-line-join: round;
+    }
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 160; viewbox-height: 110;
+        commands: "M27 " + fy(66) + " a17 " + 17 * b + " 0 1 0 34 0 a17 " + 17 * b + " 0 1 0 -34 0 Z";
+        fill: root.fill;
+        stroke: root.ink;
+        stroke-width: 2.4px * root.k;
+    }
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 160; viewbox-height: 110;
+        commands: "M32 " + fy(54) + " L29 " + fy(40) + " L42 " + fy(50) + " Z M56 " + fy(54) + " L59 " + fy(40) + " L46 " + fy(50) + " Z";
+        fill: root.fill;
+        stroke: root.ink;
+        stroke-width: 2.4px * root.k;
+        stroke-line-join: round;
+    }
+    // Shut eyes.
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 160; viewbox-height: 110;
+        commands: "M36 " + fy(68) + " q4 " + 4 * b + " 8 0 M48 " + fy(68) + " q4 " + 4 * b + " 8 0";
+        fill: transparent;
+        stroke: root.ink;
+        stroke-width: 2.4px * root.k;
+        stroke-line-cap: round;
+    }
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 160; viewbox-height: 110;
+        commands: "M" + tx(126, 86) + " " + ty(126, 86) + " C " + tx(140, 84) + " " + ty(140, 84)
+            + " " + tx(142, 70) + " " + ty(142, 70) + " " + tx(132, 64) + " " + ty(132, 64);
+        fill: transparent;
+        stroke: root.ink;
+        stroke-width: 5px * root.k;
+        stroke-line-cap: round;
+    }
+    // z z z: each rises and fades, half a second after the last.
+    for z[i] in [{ x: 98, y: 42 }, { x: 112, y: 30 }, { x: 126, y: 20 }]: Text {
+        property <float> u: mod((root.t - i * 0.5s) / 3.6s + 9, 1);
+        property <float> s: Theme.still ? 1 : 0.8 + 0.25 * u;
+        text: "z";
+        font-family: Theme.strong-font;
+        font-size: 15px * root.k * self.s;
+        color: Theme.berry;
+        opacity: Theme.still ? 0.4 : Beat.keys(u, [0, 0.3, 0.7, 1.0], [0, 0.55, 0.35, 0]);
+        x: z.x * root.k * 1px;
+        y: (z.y - 13 + (Theme.still ? 0 : 4 - 12 * u)) * root.k * 1px;
+    }
+}
+
+// Nothing paired yet (".empty-state"): the dozing cat and the way to start.
+component EmptyState inherits VerticalLayout {
+    callback go();
+
+    alignment: start;
+    spacing: 9px;
+    padding-top: 10px;
+    padding-bottom: 2px;
+    HorizontalLayout {
+        alignment: center;
+        DozeCat { }
+    }
+    Text {
+        text: @tr("Nothing paired yet");
+        font-family: Theme.strong-font;
+        font-size: 17px;
+        color: Theme.fg;
+        horizontal-alignment: center;
+        accessible-role: text;
+    }
+    HorizontalLayout {
+        alignment: center;
+        Text {
+            preferred-width: 272px;
+            max-width: 272px;
+            text: @tr("Set up the phone that stays with your pet as The Monitor, then scan its pairing code on this one.");
+            font-size: 14px;
+            color: Theme.dim;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+            accessible-role: text;
+        }
+    }
+    HorizontalLayout {
+        alignment: center;
+        padding-top: 8px;
+        PrimaryButton {
+            preferred-width: 280px;
+            max-width: 280px;
+            text: @tr("Set this up");
+            clicked => { root.go(); }
+        }
+    }
+}
+
+// The card under the list (".support-card"): the page inverted, ink with
+// paper text, the owlet and a softly beating red heart.
+component SupportCard inherits Rectangle {
+    in property <image> owlet;
+    out property <length> owlet-width: 40px;
+    out property <length> owlet-height: 36px;
+    callback clicked();
+    callback owlet-tapped(length, length, length, length);
+
+    min-height: 60px;
+    border-radius: 14px;
+    background: key.pressed ? Theme.fg.mix(Theme.bg, 0.88) : Theme.fg;
+    drop-shadow-color: key.hovered ? #0000001c : transparent;
+    drop-shadow-blur: 8px;
+    drop-shadow-offset-y: 3px;
+    animate drop-shadow-color { duration: 200ms; }
+
+    key := Press {
+        label: @tr("Support Tawny");
+        ring-radius: 12px;
+        clicked => { root.clicked(); }
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 14px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 12px;
+                    background: Theme.bg.mix(Theme.fg, 0.14);
+                    Image {
+                        width: root.owlet-width;
+                        height: root.owlet-height;
+                        source: root.owlet;
+                        TouchArea {
+                            pointer-event(e) => {
+                                if (e.kind == PointerEventKind.down) {
+                                    root.owlet-tapped(self.mouse-x, self.mouse-y, self.width, self.height);
+                                }
+                            }
+                            clicked => { root.clicked(); }
+                        }
+                    }
+                    Path {
+                        property <float> beat: Beat.soft(animation-tick());
+                        x: parent.width + 6px - 10px - 10px * self.beat;
+                        y: parent.height + 5px - 11px - 9px * self.beat;
+                        width: 20px * self.beat;
+                        height: 20px * self.beat;
+                        viewbox-width: 24;
+                        viewbox-height: 24;
+                        commands: Glyph.heart;
+                        fill: #e0344f;
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Text {
+                    height: 19px;
+                    vertical-alignment: center;
+                    text: @tr("Support Tawny");
+                    font-family: Theme.strong-font;
+                    font-size: 15.5px;
+                    color: Theme.bg;
+                    overflow: elide;
+                }
+                Text {
+                    height: 18px;
+                    vertical-alignment: center;
+                    text: @tr("Buy a coffee, or tip in Bitcoin");
+                    font-size: 13px;
+                    color: Theme.bg.mix(Theme.fg, 0.85);
+                    overflow: elide;
+                }
+            }
+            Rectangle {
+                width: 23px;
+                Path {
+                    x: key.hovered ? 3px : 0;
+                    animate x { duration: Theme.quick; }
+                    width: 20px;
+                    height: 20px;
+                    viewbox-width: 24;
+                    viewbox-height: 24;
+                    commands: Glyph.go;
+                    stroke: Theme.bg;
+                    stroke-width: 1.8px;
+                    stroke-line-cap: round;
+                    stroke-line-join: round;
+                    fill: transparent;
+                }
+            }
+        }
+    }
+}
+
+// The fine-print link to the relay settings (".servers-link"), underlined.
+component ServersLink inherits Press {
+    label: @tr("Servers (advanced)");
+    ring-radius: Theme.r-chip;
+    min-height: 44px;
+    HorizontalLayout {
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: t.preferred-width;
+                height: 18px;
+                t := Text {
+                    text: @tr("Servers (advanced)");
+                    font-size: 12px;
+                    color: root.hovered ? Theme.fg : Theme.dim;
+                    vertical-alignment: center;
+                }
+                Rectangle { y: 15px; height: 1px; background: t.color; }
+            }
+        }
+    }
+}
+
+export component Channels inherits Rectangle {
+    in property <[Channel]> channels;
+    in property <image> owlet;
+    in property <bool> can-scan: true;
+    // This host keeps settings: the Servers link shows.
+    in property <bool> servers: true;
+    out property <length> owlet-width: card.owlet-width;
+    out property <length> owlet-height: card.owlet-height;
+    callback open(string);
+    callback more(string);
+    callback add();
+    callback support();
+    callback set-up();
+    callback scan();
+    callback open-servers();
+    callback owlet-tapped(length, length, length, length);
+
+    VerticalLayout {
+        // The bar: the mark, the wordmark, and Support and New channel.
+        Rectangle {
+            height: 66px;
+            background: flick.content-y < 0 ? Theme.panel : transparent;
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: flick.content-y < 0 ? Theme.line : transparent;
+            }
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 54px;
+                padding-top: 4px;
+                padding-bottom: 4px;
+                spacing: 8px;
+                HorizontalLayout {
+                    padding-left: 6px;
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 30px;
+                            height: 30px;
+                            border-radius: 8px;
+                            clip: true;
+                            background: #d24b6d;
+                            drop-shadow-color: #0c0d1238;
+                            drop-shadow-blur: 3px;
+                            drop-shadow-offset-y: 1px;
+                            Image {
+                                width: 100%;
+                                height: 100%;
+                                source: @image-url("icon.svg");
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 0;
+                    Text {
+                        height: 32px;
+                        vertical-alignment: bottom;
+                        text: "Tawny";
+                        font-family: Theme.display-font;
+                        font-size: 28px;
+                        letter-spacing: 0.8px;
+                        color: Theme.fg;
+                        accessible-role: text;
+                    }
+                    Text {
+                        height: 18px;
+                        vertical-alignment: top;
+                        text: @tr("Pet Monitor");
+                        font-size: 12.5px;
+                        letter-spacing: 0.5px;
+                        color: Theme.dim;
+                        overflow: elide;
+                    }
+                }
+                BarKey {
+                    label: @tr("Support Tawny");
+                    path: Glyph.heart;
+                    filled: true;
+                    tint: #e0344f;
+                    beat: Beat.idle(animation-tick());
+                    clicked => { root.support(); }
+                }
+                BarKey {
+                    label: @tr("New channel");
+                    path: Glyph.plus;
+                    action: true;
+                    clicked => { root.add(); }
+                }
+            }
+        }
+        flick := Flickable {
+            vertical-stretch: 1;
+            HorizontalLayout {
+                width: parent.width;
+                alignment: center;
+                padding-left: 16px;
+                padding-right: 16px;
+                VerticalLayout {
+                    preferred-width: 416px;
+                    max-width: 416px;
+                    padding-top: 16px;
+                    padding-bottom: 28px;
+                    spacing: 22px;
+                    alignment: start;
+                    VerticalLayout {
+                        spacing: 12px;
+                        BlockHead { text: @tr("Channels").to-uppercase(); }
+                        if root.channels.length == 0: EmptyState {
+                            go => { root.set-up(); }
+                        }
+                        for ch in root.channels: ChannelRow {
+                            ch: ch;
+                            open => { root.open(ch.id); }
+                            more => { root.more(ch.id); }
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 12px;
+                        BlockHead { text: @tr("Join a Monitor").to-uppercase(); }
+                        Text {
+                            text: @tr("Point your phone’s camera at the pairing code shown by The Monitor. It opens this page already set up.");
+                            font-size: 15px;
+                            color: Theme.dim;
+                            wrap: word-wrap;
+                            accessible-role: text;
+                        }
+                        if root.can-scan: GhostButton {
+                            solid: true;
+                            text: @tr("Scan pairing code");
+                            clicked => { root.scan(); }
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 0;
+                        Text {
+                            text: @tr("Video and audio travel straight between your devices. The server only introduces the two phones to each other, and never gets the key that unlocks the picture.");
+                            font-size: 11.5px;
+                            color: Theme.dim;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: @tr("Tawny is free and unlocks nothing for money — chipping in only helps pay the running costs.");
+                            font-size: 11.5px;
+                            color: Theme.dim;
+                            wrap: word-wrap;
+                        }
+                        Rectangle { height: 16px; }
+                        card := SupportCard {
+                            owlet: root.owlet;
+                            clicked => { root.support(); }
+                            owlet-tapped(x, y, w, h) => { root.owlet-tapped(x, y, w, h); }
+                        }
+                        if root.servers: HorizontalLayout {
+                            alignment: center;
+                            padding-top: 10px;
+                            ServersLink {
+                                clicked => { root.open-servers(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

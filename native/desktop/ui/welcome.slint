@@ -1,0 +1,90 @@
+// The first screen: the trio, the wordmark, one line, and the way in.
+// Same column as web/index.html #welcome (".screen.hero").
+
+import { Theme } from "theme.slint";
+import { Foot } from "widgets.slint";
+
+export component Welcome inherits Rectangle {
+    in property <image> scene;
+    callback go();
+    callback skip();
+    // A tap on the scene, in its own pixels and size.
+    callback scene-tapped(length, length, length, length);
+    // The scene's on-screen size, for the caller to draw it at.
+    out property <length> scene-width: art.width;
+    out property <length> scene-height: art.height;
+
+    VerticalLayout {
+        // The hero column, centred optically in the space above the foot.
+        Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: center;
+                padding-top: 20px;
+                padding-bottom: 28px;
+                spacing: 14px;
+                HorizontalLayout {
+                    alignment: center;
+                    art := Image {
+                        source: root.scene;
+                        // .scene: up to 300 px wide, 260:188 (the scene and its sky).
+                        min-width: 120px;
+                        preferred-width: 300px;
+                        max-width: 300px;
+                        height: self.width * 188 / 260;
+                        image-fit: contain;
+                        accessible-role: image;
+                        accessible-label: "A cat, Tawny the owlet and a dog";
+                        TouchArea {
+                            pointer-event(e) => {
+                                if (e.kind == PointerEventKind.down) {
+                                    root.scene-tapped(self.mouse-x, self.mouse-y, self.width, self.height);
+                                }
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 3px;
+                    Text {
+                        text: "Tawny";
+                        font-family: Theme.display-font;
+                        font-size: 38px;
+                        letter-spacing: 1.1px;
+                        color: Theme.fg;
+                        horizontal-alignment: center;
+                        accessible-role: text;
+                    }
+                    Text {
+                        text: @tr("Pet Monitor");
+                        font-family: Theme.text-font;
+                        font-size: 13.5px;
+                        letter-spacing: 0.5px;
+                        color: Theme.dim;
+                        horizontal-alignment: center;
+                    }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Text {
+                        // .welcome-lede: 32ch wide, 16 px, the dim ink.
+                        max-width: 300px;
+                        text: @tr("Keep an eye on your pet from anywhere in the house. Two phones on your Wi-Fi — no accounts, nothing to set up.");
+                        wrap: word-wrap;
+                        font-family: Theme.text-font;
+                        font-size: 16px;
+                        color: Theme.dim;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+        // The foot: the way in, pinned in thumb reach.
+        Foot {
+            primary: @tr("Get started");
+            secondary: @tr("I’ve set this up before");
+            primary-clicked => { root.go(); }
+            secondary-clicked => { root.skip(); }
+        }
+    }
+}

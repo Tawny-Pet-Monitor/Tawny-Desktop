@@ -1,0 +1,126 @@
+// The Monitor's "show this to the Viewer" screen (web/index.html #watch-pair):
+// the pairing QR, the link for when scanning won't do, and the wait.
+
+import { Theme } from "theme.slint";
+import { AppBar } from "chrome.slint";
+import { Foot, GhostButton, Pump } from "widgets.slint";
+
+export component WatchPair inherits Rectangle {
+    in property <image> qr;
+    in property <string> link;
+    in property <string> status: @tr("Waiting for the Viewer");
+    in property <bool> copied;
+    callback back();
+    callback copy();
+    callback start();
+    callback later();
+
+    VerticalLayout {
+        AppBar {
+            title: @tr("The Monitor");
+            sub: @tr("Show this to the Viewer");
+            go-back => { root.back(); }
+        }
+        flick := Flickable {
+            vertical-stretch: 1;
+            HorizontalLayout {
+                width: parent.width;
+                alignment: center;
+                padding-left: 16px;
+                padding-right: 16px;
+                VerticalLayout {
+                    preferred-width: 416px;
+                    max-width: 416px;
+                    padding-top: 16px;
+                    padding-bottom: 28px;
+                    spacing: 22px;
+                    alignment: LayoutAlignment.start;
+                    // The code on white, whatever the theme: scanners want contrast.
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 292px;
+                            height: 292px;
+                            background: #ffffff;
+                            border-radius: Theme.r-card;
+                            drop-shadow-color: Theme.dark ? #00000050 : #3b2a3218;
+                            drop-shadow-blur: 18px;
+                            drop-shadow-offset-y: 4px;
+                            Image {
+                                x: 14px; y: 14px;
+                                width: parent.width - 28px;
+                                height: parent.height - 28px;
+                                source: root.qr;
+                                image-rendering: pixelated;
+                                accessible-role: image;
+                                accessible-label: @tr("Pairing code");
+                            }
+                        }
+                    }
+                    StyledText {
+                        text: @markdown("On the other phone, open Tawny, choose **The Viewer**, and point its camera at this code.");
+                        default-font-size: 15px;
+                        default-font-family: Theme.text-font;
+                        default-color: Theme.dim;
+                        horizontal-alignment: center;
+                    }
+                    // Can't scan? The link, and a key to copy it.
+                    VerticalLayout {
+                        spacing: 10px;
+                        padding-top: 18px;
+                        Rectangle { height: 1px; background: Theme.line; }
+                        Text {
+                            text: @tr("Can’t scan? Send this link instead").to-uppercase();
+                            font-size: 11px;
+                            letter-spacing: 1.5px;
+                            color: Theme.dim;
+                        }
+                        Rectangle {
+                            border-radius: Theme.r-ctl;
+                            border-width: 1px;
+                            border-color: Theme.line;
+                            background: Theme.bg;
+                            VerticalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                padding-top: 10px;
+                                padding-bottom: 10px;
+                                Text {
+                                    text: root.link;
+                                    font-size: 10.5px;
+                                    color: Theme.dim;
+                                    wrap: char-wrap;
+                                    accessible-role: text;
+                                }
+                            }
+                        }
+                        GhostButton {
+                            text: root.copied ? @tr("Copied") : @tr("Copy pairing link");
+                            clicked => { root.copy(); }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 10px;
+                        Pump { }
+                        Text {
+                            text: root.status.to-uppercase();
+                            font-size: 11px;
+                            letter-spacing: 1.8px;
+                            color: Theme.dim;
+                            vertical-alignment: center;
+                            accessible-role: text;
+                        }
+                    }
+                }
+            }
+        }
+        Foot {
+            lifted: flick.content-height + flick.content-y > flick.height + 1px;
+            primary: @tr("Start watching now");
+            secondary: @tr("Set up later");
+            primary-clicked => { root.start(); }
+            secondary-clicked => { root.later(); }
+        }
+    }
+}

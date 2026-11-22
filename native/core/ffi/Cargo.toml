@@ -1,0 +1,44 @@
+[package]
+name = "tawny-ffi"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Kotlin and Swift bindings for tawny-core (UniFFI)."
+license = "MIT"
+publish = false
+
+[lib]
+name = "tawny_ffi"
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+tawny-core = { path = "..", features = ["engine"] }
+libwebrtc = "=0.4.2"
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+uniffi = { version = "=0.32.2", features = ["cli"] }
+hex = "0.4"
+futures-util = "0.3"
+getrandom = "0.3"
+serde = "1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-sys = "0.6"
+
+[build-dependencies]
+webrtc-sys-build = "=0.3.21"
+
+[lints.rust]
+missing_docs = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+module_name_repetitions = "allow"

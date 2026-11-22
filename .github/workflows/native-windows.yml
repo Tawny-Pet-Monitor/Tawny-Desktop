@@ -1,0 +1,53 @@
+# The native (Slint) Desktop on Windows: build it, lint it, test it, and keep
+# the unsigned .exe as a workflow artifact for trying out. Nothing is
+# published. libwebrtc's Windows build needs MSVC, which is why this runs on
+# GitHub's Windows runner rather than on the Linux build machine.
+
+name: Native Windows
+
+on:
+  push:
+    branches: [devops/native]
+    paths:
+      - 'native/**'
+      - '.github/workflows/native-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: native/desktop
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 2026-10-16
+        with:
+          toolchain: stable
+          components: clippy
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/desktop
+
+      # webrtc-sys and the recorder's C layer build with MSVC.
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Lint
+        run: cargo clippy --release --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --release --locked
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tawny-windows-x64
+          path: native/desktop/target/release/tawny.exe
+          retention-days: 14
