@@ -297,6 +297,7 @@ pub enum StationEvent {
 enum StationMsg {
     Signal(Value),
     Gate(PairGate),
+    Code(policy::PairCode),
     Dimmed(bool),
     Close,
     State(String, PeerConnectionState),
@@ -373,6 +374,12 @@ impl Station {
         let _ = self.tx.send(StationMsg::Gate(gate));
     }
 
+    /// A new code on screen, leaving the phones already let in as they are
+    /// (one enrolled a moment ago may not have reached the app's copy yet).
+    pub fn set_code(&self, code: policy::PairCode) {
+        let _ = self.tx.send(StationMsg::Code(code));
+    }
+
     /// Dim mode: the Monitor's own screen is off; spend less.
     pub fn set_dimmed(&self, dimmed: bool) {
         let _ = self.tx.send(StationMsg::Dimmed(dimmed));
@@ -436,6 +443,7 @@ impl StationActor {
             match m {
                 StationMsg::Signal(f) => self.on_signal(&f).await,
                 StationMsg::Gate(g) => self.cfg.gate = g,
+                StationMsg::Code(c) => self.cfg.gate.code = Some(c),
                 StationMsg::Dimmed(d) => {
                     self.dimmed = d;
                     self.retune();
@@ -615,8 +623,15 @@ impl StationActor {
         let Some(pc) = self.viewers.get(from).map(|v| v.pc.clone()) else {
             return;
         };
+        // A first offer that can't be answered gives its seat back (it
+        // would never connect, and would count towards the Monitor's limit);
+        // a later one (renegotiation) leaves the call it belongs to alone.
+        let fresh = !known;
         if let Err(e) = pc.set_remote_description(desc).await {
             self.emit(StationEvent::Log(format!("setRemote: {e:?}")));
+            if fresh {
+                self.remove(from);
+            }
             return;
         }
         for t in pc.transceivers() {
@@ -625,10 +640,16 @@ impl StationActor {
             }
         }
         let Ok(answer) = pc.create_answer(AnswerOptions::default()).await else {
+            if fresh {
+                self.remove(from);
+            }
             return;
         };
         let sdp = answer.to_string();
         if pc.set_local_description(answer).await.is_err() {
+            if fresh {
+                self.remove(from);
+            }
             return;
         }
         self.emit(StationEvent::Signal(

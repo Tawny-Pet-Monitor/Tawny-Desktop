@@ -68,6 +68,11 @@ pub struct Keys {
     pub lan: Option<String>,
     /// The rendezvous ticket the pairing link carried.
     pub ticket: Option<String>,
+    /// The link's own rendezvous (`wss://…`), kept only when it is one a
+    /// link may name without asking (a tailnet name, a private address, or
+    /// the one already in use); otherwise Tawny's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rendezvous: Option<String>,
     /// The pairing code, kept until this Viewer is first let in.
     pub code: Option<String>,
     /// This Viewer checked the safety code once.
@@ -86,6 +91,13 @@ pub struct Keys {
 pub struct Settings {
     /// "system", "light" or "dark".
     pub theme: String,
+    /// Each Nostr relay's last verdict, so one that refused is skipped for a
+    /// while instead of retried at every start (as on Android).
+    #[serde(
+        default,
+        skip_serializing_if = "tawny_core::relay::health::HealthBook::is_empty"
+    )]
+    pub relay_health: tawny_core::relay::health::HealthBook,
     /// What the others see next to this device.
     pub my_name: String,
     /// The user's own Nostr relays; empty for the build's.
@@ -106,6 +118,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             theme: "system".into(),
+            relay_health: tawny_core::relay::health::HealthBook::default(),
             my_name: String::new(),
             relays: Vec::new(),
             relays_only: false,

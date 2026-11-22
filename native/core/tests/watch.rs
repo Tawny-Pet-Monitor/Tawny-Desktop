@@ -99,6 +99,8 @@ struct Seen {
     watch_sas: Option<Option<String>>,
     monitor_sas: Option<Option<String>>,
     refused: Option<String>,
+    /// The Monitor's gate as it last reported it (phones it enrolled).
+    gate: Option<PairGate>,
 }
 
 /// Runs both ends until the phone has decoded 10 frames (or 30 s pass).
@@ -130,7 +132,11 @@ async fn watch_until_frames(
                 }
                 _ => {}
             },
-            Some(e) = m_rx.recv() => if let MonitorEvent::Sas { code, .. } = e { seen.monitor_sas = Some(code) },
+            Some(e) = m_rx.recv() => match e {
+                MonitorEvent::Sas { code, .. } => seen.monitor_sas = Some(code),
+                MonitorEvent::Gate(g) => seen.gate = Some(g),
+                _ => {}
+            },
             () = tokio::time::sleep(Duration::from_millis(100)) => {}
         }
     }
@@ -172,6 +178,32 @@ async fn off_the_wifi_the_call_goes_over_nostr_and_both_ends_show_one_code() -> 
     assert_eq!(a, b, "the same code on both phones");
     watch.stop();
     monitor.stop();
+    Ok(())
+}
+
+/// The Monitor app restarts (the same keys, the phones it knows): the phone
+/// that was watching hangs up the dead call and calls the new one.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_monitor_that_restarts_is_called_again() -> R {
+    let relay = common::relay(false).await?;
+    let (first, mut m_rx) = Monitor::start(monitor_config(false, vec![relay.clone()])).await?;
+    camera(&first);
+    let p = scan(&first)?;
+    let (watch, mut w_rx) = Watch::start(watch_config(&p, vec![relay.clone()]))?;
+    let seen = watch_until_frames(&mut m_rx, &mut w_rx, false).await;
+    let gate = seen.gate.ok_or("the phone was never enrolled")?;
+    first.stop();
+    let mut cfg = monitor_config(false, vec![relay]);
+    cfg.gate = gate;
+    let (second, mut m_rx) = Monitor::start(cfg).await?;
+    camera(&second);
+    let again = watch_until_frames(&mut m_rx, &mut w_rx, false).await;
+    assert!(
+        again.connected,
+        "the phone called the restarted Monitor: {again:?}"
+    );
+    watch.stop();
+    second.stop();
     Ok(())
 }
 

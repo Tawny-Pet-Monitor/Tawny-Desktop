@@ -47,6 +47,12 @@ pub struct Health {
 pub struct HealthBook(BTreeMap<String, Health>);
 
 impl HealthBook {
+    /// Whether no relay has a verdict yet.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// Records a verdict, keeping the 16 most recent relays.
     pub fn record(&mut self, url: &str, v: Verdict, why: &str, ms: Option<u64>, now_ms: u64) {
         self.forget_old(now_ms);

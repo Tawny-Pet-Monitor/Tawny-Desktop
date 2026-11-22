@@ -2,3 +2,11 @@
 # else in the program has to as well, or MSVC refuses to link the two.
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+# webrtc-sys builds NVIDIA's hardware video codecs whenever it finds CUDA's
+# headers on the build machine. Its H.264 decoder throws on a libwebrtc
+# thread when a stream changes size (seen: the whole app aborted mid-call on
+# a machine with an NVIDIA card), so every build uses libwebrtc's software
+# codecs, whatever the build machine has installed.
+[env]
+CUDA_HOME = { value = "/nonexistent/tawny-builds-without-cuda", force = true }

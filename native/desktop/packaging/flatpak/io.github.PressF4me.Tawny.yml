@@ -49,6 +49,8 @@ modules:
         LIBCLANG_PATH: /usr/lib/sdk/llvm22/lib
         # webrtc-sys builds against this instead of downloading libwebrtc.
         LK_CUSTOM_WEBRTC: /run/build/tawny/webrtc
+        # Never NVIDIA's hardware codecs (see desktop-native/.cargo/config.toml).
+        CUDA_HOME: /nonexistent/tawny-builds-without-cuda
     build-commands:
       - cargo --offline build --release --manifest-path desktop-native/Cargo.toml
       - install -Dm755 desktop-native/target/release/tawny /app/bin/tawny

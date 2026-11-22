@@ -22,7 +22,6 @@ use tawny_core::call::policy::PairGate;
 use tawny_core::engine::monitor::{Monitor, MonitorConfig, MonitorEvent};
 use tawny_core::engine::viewer::{Watch, WatchConfig, WatchEvent};
 use tawny_core::link::{self, Anchors, Pairing};
-use tawny_core::relay::health::HealthBook;
 use tokio::runtime::Runtime;
 
 use crate::app::shown_name;
@@ -137,6 +136,9 @@ pub struct Host {
     speaker: RefCell<Option<crate::audio::Speaker>>,
     /// The scanner's camera, while its sheet is open.
     scanner: RefCell<Option<crate::camera::Capture>>,
+    /// On a Monitor, the Viewer whose camera has the stage, and when its last
+    /// frame came.
+    featured: RefCell<Option<(String, std::time::Instant)>>,
 }
 
 impl Host {
@@ -160,6 +162,7 @@ impl Host {
             mix: Arc::default(),
             speaker: RefCell::new(None),
             scanner: RefCell::new(None),
+            featured: RefCell::new(None),
         });
         HOST.with(|h| *h.borrow_mut() = Some(host.clone()));
         wire(ui);
@@ -169,6 +172,21 @@ impl Host {
     /// The engine's runtime, for other work off the window's thread.
     pub fn handle(&self) -> tokio::runtime::Handle {
         self.rt.handle().clone()
+    }
+
+    /// The stage goes back to this Monitor's camera: from any Viewer
+    /// (`None`), or only from `id` if it is the one that has it.
+    fn release_stage(&self, id: Option<&str>) {
+        let mut f = self.featured.borrow_mut();
+        if f.as_ref()
+            .is_some_and(|(who, _)| id.is_none_or(|i| i == who))
+        {
+            *f = None;
+            FEATURED.store(false, Ordering::Relaxed);
+            if let Some(ui) = self.ui.upgrade() {
+                ui.global::<Live>().set_has_pip(false);
+            }
+        }
     }
 
     /// Opens the speaker, if it isn't already (a word on screen if none).
@@ -215,6 +233,7 @@ impl Host {
         live.set_has_pip(false);
         live.set_camera_on(false);
         FEATURED.store(false, Ordering::Relaxed);
+        *self.featured.borrow_mut() = None;
         live.set_talking(false);
         live.set_talkflag(false);
         live.set_note_title(SharedString::new());
@@ -248,7 +267,7 @@ impl Host {
             ticket: keys.ticket.clone(),
             nostr_secret: Some(secret),
             nostr_relays: relays(store),
-            nostr_health: HealthBook::default(),
+            nostr_health: store.data.settings.relay_health.clone(),
             nostr_known: keys.known,
             rendezvous: (!only).then(|| DEFAULT_RENDEZVOUS.to_owned()),
             lan_bind: (!only).then(|| SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0))),
@@ -378,6 +397,7 @@ impl Host {
             }
             MonitorEvent::Left { id } => {
                 self.mix.forget(&id);
+                self.release_stage(Some(&id));
                 m.guests.remove(&id);
                 if m.sas_for.as_deref() == Some(id.as_str()) {
                     m.sas_for = None;
@@ -413,20 +433,18 @@ impl Host {
             MonitorEvent::TalkAudio { id, track } => {
                 crate::audio::listen(&self.rt, self.mix.clone(), id, track, false);
             }
-            // A Viewer's own camera and the relay book: still to come.
-            MonitorEvent::ViewerVideo { id: _, track } => {
+            MonitorEvent::ViewerVideo { id, track } => {
                 // A Viewer's own camera takes the stage while it sends;
                 // this Monitor's camera moves to the corner.
-                FEATURED.store(true, Ordering::Relaxed);
                 crate::video::pump(
                     &self.rt,
                     track,
                     Arc::new(AtomicBool::new(false)),
-                    show_featured,
+                    move |img| show_featured(&id, img),
                     false,
                 );
             }
-            MonitorEvent::Health(_) => {}
+            MonitorEvent::Health(book) => self.persist(|s| s.data.settings.relay_health = book),
         }
         let watching: Vec<&Guest> = m.guests.values().filter(|g| g.connected).collect();
         live.set_peers(i32::try_from(watching.len()).unwrap_or(i32::MAX));
@@ -621,6 +639,8 @@ impl Host {
             }
             k.ticket.clone_from(&p.token);
             k.code.clone_from(&p.code);
+            // As on Android: a link's rendezvous only from a trusted host.
+            k.rendezvous = p.relay.clone().filter(|_| p.relay_trusted);
             if let Err(e) = s.save() {
                 eprintln!("tawny: saving: {e:#}");
             }
@@ -634,7 +654,7 @@ impl Host {
         let secret = parse_secret(&store.viewer_nostr(&ch.key))?;
         let pid = store.bond(&ch.key);
         let keys = store.keys_mut(&ch.key).clone();
-        if keys.monitor_nostr.is_none() && keys.lan.is_none() {
+        if keys.monitor_nostr.is_none() && keys.lan.is_none() && keys.ticket.is_none() {
             return Err(anyhow!("no pairing for this channel"));
         }
         let only = store.data.settings.relays_only && !store.data.settings.relays.is_empty();
@@ -648,12 +668,16 @@ impl Host {
             mic: true,
             lan: if only { None } else { keys.lan.clone() },
             // Only with the ticket the pairing link carried (as on Android).
-            rendezvous: (!only && keys.ticket.is_some()).then(|| DEFAULT_RENDEZVOUS.to_owned()),
+            rendezvous: (!only && keys.ticket.is_some()).then(|| {
+                keys.rendezvous
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_RENDEZVOUS.to_owned())
+            }),
             ticket: keys.ticket.clone(),
             nostr_station: keys.monitor_nostr.clone(),
             nostr_secret: Some(secret),
             nostr_relays: relays(store),
-            nostr_health: HealthBook::default(),
+            nostr_health: store.data.settings.relay_health.clone(),
             media: media(),
         };
         let (watch, mut rx) = {
@@ -775,7 +799,10 @@ impl Host {
             WatchEvent::Audio(track) => {
                 crate::audio::listen(&self.rt, self.mix.clone(), "monitor".into(), track, true);
             }
-            WatchEvent::Health(_) => {}
+            WatchEvent::Health(book) => {
+                drop(run);
+                self.persist(|s| s.data.settings.relay_health = book);
+            }
         }
     }
 
@@ -1314,6 +1341,15 @@ fn scanned(text: &str) {
 /// camera has the stage. On a Viewer, its own camera in the corner.
 fn show_own_picture(img: Image) {
     host(|h| {
+        // A Viewer's camera that went quiet (turned off) gives the stage back.
+        let stale = h
+            .featured
+            .borrow()
+            .as_ref()
+            .is_some_and(|(_, last)| last.elapsed() > STAGE_QUIET);
+        if stale {
+            h.release_stage(None);
+        }
         let Some(ui) = h.ui.upgrade() else { return };
         let live = ui.global::<Live>();
         if live.get_role() == "station" && !FEATURED.load(Ordering::Relaxed) {
@@ -1327,25 +1363,40 @@ fn show_own_picture(img: Image) {
     });
 }
 
-/// A Viewer's camera on the Monitor's stage; when it stops, the stage goes
-/// back to this camera.
-fn show_featured(img: Option<Image>) {
+/// How long a Viewer's camera may send nothing before the stage goes back.
+const STAGE_QUIET: Duration = Duration::from_secs(2);
+
+/// Viewer `id`'s camera on the Monitor's stage. One Viewer has it at a time
+/// (another's frames wait until it has been quiet a moment); when its
+/// camera stops, it goes quiet or it leaves, the stage goes back to this
+/// camera.
+fn show_featured(id: &str, img: Option<Image>) {
     host(|h| {
         let Some(ui) = h.ui.upgrade() else { return };
         let live = ui.global::<Live>();
-        if let Some(img) = img {
-            if std::env::var_os("TAWNY_DEV").is_some() {
-                let luma = img
-                    .to_rgba8()
-                    .map_or(0, |b| crate::video::mean_luma(b.as_bytes()));
-                eprintln!("tawny: STATE featured viewer camera luma {luma}");
+        let Some(img) = img else {
+            h.release_stage(Some(id));
+            return;
+        };
+        {
+            let mut f = h.featured.borrow_mut();
+            let held_by_other = f
+                .as_ref()
+                .is_some_and(|(who, last)| who != id && last.elapsed() <= STAGE_QUIET);
+            if held_by_other {
+                return;
             }
-            live.set_video(img);
-            live.set_has_video(true);
-        } else {
-            FEATURED.store(false, Ordering::Relaxed);
-            live.set_has_pip(false);
+            *f = Some((id.to_owned(), std::time::Instant::now()));
         }
+        FEATURED.store(true, Ordering::Relaxed);
+        if std::env::var_os("TAWNY_DEV").is_some() {
+            let luma = img
+                .to_rgba8()
+                .map_or(0, |b| crate::video::mean_luma(b.as_bytes()));
+            eprintln!("tawny: STATE featured viewer camera luma {luma}");
+        }
+        live.set_video(img);
+        live.set_has_video(true);
     });
 }
 

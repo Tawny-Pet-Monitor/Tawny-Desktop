@@ -355,20 +355,20 @@ impl Router {
             "peer-joined" if f["role"] == "station" => {
                 let id = f["id"].as_str().map(str::to_owned);
                 let moved = id.is_some() && s.station.is_some() && s.station != id;
-                s.station = id;
+                let old = std::mem::replace(&mut s.station, id);
                 s.since.get_or_insert_with(Instant::now);
                 // A Monitor that came back under a new id: the old call is gone.
                 if moved && self.active == Some(way) {
-                    self.drop_active();
+                    self.drop_active(old);
                 }
             }
             "peer-left"
                 if f["id"].as_str().is_some() && f["id"].as_str() == s.station.as_deref() =>
             {
-                s.station = None;
+                let old = s.station.take();
                 s.since = None;
                 if self.active == Some(way) {
-                    self.drop_active();
+                    self.drop_active(old);
                 }
             }
             _ if self.active == Some(way) => self.viewer.signal(f),
@@ -377,13 +377,15 @@ impl Router {
         self.choose();
     }
 
-    /// The way the call was on lost the Monitor: hang up; [`Self::choose`]
-    /// places it again on another way if one still has it.
-    fn drop_active(&mut self) {
+    /// The way the call was on lost the Monitor `gone` (its id as it was
+    /// before the way forgot it): hang up; [`Self::choose`] places the call
+    /// again on another way if one still has it. The id must be the old one:
+    /// the Viewer only hangs up on a `peer-left` from the Monitor it called.
+    fn drop_active(&mut self, gone: Option<String>) {
         let Some(way) = self.active.take() else {
             return;
         };
-        let gone = self.seen[slot(way)].station.clone().unwrap_or_default();
+        let gone = gone.unwrap_or_default();
         self.viewer
             .signal(json!({ "type": "peer-left", "id": gone, "from": gone }));
         self.emit(WatchEvent::Log(format!("{}: lost the Monitor", way.name())));
@@ -445,10 +447,10 @@ impl Router {
 
     fn lost(&mut self, way: Way) {
         let s = &mut self.seen[slot(way)];
-        s.station = None;
+        let old = s.station.take();
         s.since = None;
         if self.active == Some(way) {
-            self.drop_active();
+            self.drop_active(old);
         }
         self.choose();
     }

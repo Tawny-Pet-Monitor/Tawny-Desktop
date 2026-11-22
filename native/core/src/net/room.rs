@@ -107,7 +107,9 @@ async fn dial_loop(
                     let _ = sink.send(Message::text(s)).await;
                 }
             }
-            loop {
+            // A write that fails ends this socket (to the reconnect below),
+            // not just the frame being written.
+            'socket: loop {
                 tokio::select! {
                     msg = stream.next() => match msg {
                         Some(Ok(Message::Text(t))) => {
@@ -128,7 +130,7 @@ async fn dial_loop(
                     },
                     f = out.recv() => match f {
                         Some(f) => for o in client.send(&f) {
-                            if let RoomOut::Send(s) = o { if sink.send(Message::text(s)).await.is_err() { break; } }
+                            if let RoomOut::Send(s) = o { if sink.send(Message::text(s)).await.is_err() { break 'socket; } }
                         },
                         None => return,
                     },

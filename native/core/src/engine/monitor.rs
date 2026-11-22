@@ -298,7 +298,7 @@ impl Monitor {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let code = g.new_code(now_ms())?.clone();
-        self.station.set_gate(g.clone());
+        self.station.set_code(code.clone());
         Ok(code)
     }
 
@@ -340,11 +340,12 @@ impl Monitor {
             .gate
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        g.code = Some(PairCode {
+        let code = PairCode {
             code: code.to_owned(),
             expires_ms,
-        });
-        self.station.set_gate(g.clone());
+        };
+        g.code = Some(code.clone());
+        self.station.set_code(code);
     }
 
     /// Sends a control frame (`battery`, `meta`, …) to every connected Viewer.

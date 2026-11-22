@@ -18,11 +18,13 @@ pub const MAX_PIXELS: usize = 4096 * 4096;
 
 /// Where frames go, on the window's thread: the picture, or `None` when the
 /// track ended.
-pub type Sink = fn(Option<Image>);
+pub trait Sink: Fn(Option<Image>) + Send + Sync + 'static {}
+impl<T: Fn(Option<Image>) + Send + Sync + 'static> Sink for T {}
 
 /// Shows `track` through `sink` until it ends or `stop` is set.
 /// With `tap`, the frames also go to a clip being recorded.
-pub fn pump(rt: &Runtime, track: RtcVideoTrack, stop: Arc<AtomicBool>, sink: Sink, tap: bool) {
+pub fn pump(rt: &Runtime, track: RtcVideoTrack, stop: Arc<AtomicBool>, sink: impl Sink, tap: bool) {
+    let sink = Arc::new(sink);
     let busy = Arc::new(AtomicBool::new(false));
     rt.spawn(async move {
         let mut stream = NativeVideoStream::new(track);
@@ -63,16 +65,17 @@ pub fn pump(rt: &Runtime, track: RtcVideoTrack, stop: Arc<AtomicBool>, sink: Sin
                 continue;
             };
             let done = busy.clone();
+            let to = sink.clone();
             let sent = slint::invoke_from_event_loop(move || {
                 let buf = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&pixels, ow, oh);
-                sink(Some(Image::from_rgba8(buf)));
+                (*to)(Some(Image::from_rgba8(buf)));
                 done.store(false, Ordering::Release);
             });
             if sent.is_err() {
                 break;
             }
         }
-        let _ = slint::invoke_from_event_loop(move || sink(None));
+        let _ = slint::invoke_from_event_loop(move || (*sink)(None));
     });
 }
 
