@@ -909,7 +909,7 @@ mod tests {
         Amount, Watch, amount_at, fmt_sats, fmt_usd, invoice_msats, is_receipt, other_amount,
         qr_pixmap,
     };
-    use serde_json::json;
+    use serde_json::{Value, json};
     use tawny_core::nostr::event::{Template, public_key, sign};
 
     #[test]
@@ -1043,5 +1043,41 @@ mod tests {
             let (_, text) = grids[0].decode().expect("decodes");
             assert_eq!(text, pr, "at {px}px");
         }
+    }
+
+    /// A receipt a real wallet published (the Android app's `TipZapTest` uses
+    /// the same one): taken as it is, refused for another invoice, another
+    /// signer, or a changed body.
+    #[test]
+    fn a_real_receipt_is_accepted_and_forgeries_are_not() {
+        let ev: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/zap-receipt.json")).expect("json");
+        let tag = |n: &str| -> String {
+            ev["tags"]
+                .as_array()
+                .and_then(|t| t.iter().find(|t| t[0] == n))
+                .and_then(|t| t[1].as_str())
+                .expect("tag")
+                .to_owned()
+        };
+        let watch = Watch {
+            invoice: tag("bolt11"),
+            tag: tag("p"),
+            signer: ev["pubkey"].as_str().expect("pubkey").to_owned(),
+        };
+        assert!(is_receipt(&ev, &watch), "the real receipt");
+        let other = Watch {
+            invoice: "lnbc1other".into(),
+            ..watch.clone()
+        };
+        assert!(!is_receipt(&ev, &other), "another invoice");
+        let stranger = Watch {
+            signer: "00".repeat(32),
+            ..watch.clone()
+        };
+        assert!(!is_receipt(&ev, &stranger), "another signer");
+        let mut changed = ev.clone();
+        changed["content"] = Value::from("changed");
+        assert!(!is_receipt(&changed, &watch), "a changed body");
     }
 }
