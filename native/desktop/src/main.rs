@@ -12,6 +12,7 @@ mod audio;
 mod camera;
 mod chime;
 mod migrate;
+mod motion;
 mod qr;
 mod record;
 mod scene;
@@ -95,6 +96,7 @@ fn main() -> Result<()> {
     }
     let store = Rc::new(RefCell::new(opened));
     let ui = AppWindow::new()?;
+    motion::follow(&ui);
     let _scene = SceneDriver::attach(&ui);
     let host = session::Host::attach(&ui, store.clone())?;
     let sessions: Rc<dyn app::Sessions> = host.clone();
