@@ -121,6 +121,9 @@ pub struct MonitorSettings {
     pub nostr_known: Vec<String>,
     /// The internet rendezvous (`wss://host`), if any.
     pub rendezvous: Option<String>,
+    /// The build's own rendezvous, used if `rendezvous` (the user's) won't
+    /// let us in; `None` without a custom one or under tighter privacy.
+    pub rendezvous_fallback: Option<String>,
     /// The LAN relay's port (0 picks one); `None` for no LAN relay.
     pub lan_port: Option<u16>,
     /// This device's address on the Wi-Fi, for the pairing link.
@@ -244,6 +247,7 @@ fn config(s: MonitorSettings) -> Result<MonitorConfig, TawnyError> {
         nostr_health,
         nostr_known: s.nostr_known,
         rendezvous: s.rendezvous,
+        rendezvous_fallback: s.rendezvous_fallback,
         lan_bind: s
             .lan_port
             .map(|p| SocketAddr::from((Ipv4Addr::UNSPECIFIED, p))),
@@ -631,6 +635,7 @@ mod tests {
             nostr_health: String::new(),
             nostr_known: vec![],
             rendezvous: None,
+            rendezvous_fallback: None,
             lan_port: Some(0),
             lan_ip: Some("192.168.1.20".into()),
             gate: String::new(),

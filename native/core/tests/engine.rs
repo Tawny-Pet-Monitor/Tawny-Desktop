@@ -31,6 +31,7 @@ fn config() -> MonitorConfig {
         nostr_health: HealthBook::default(),
         nostr_known: vec![],
         rendezvous: None,
+        rendezvous_fallback: None,
         lan_bind: Some(
             "127.0.0.1:0"
                 .parse()

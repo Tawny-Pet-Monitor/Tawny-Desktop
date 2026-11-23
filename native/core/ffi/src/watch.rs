@@ -29,6 +29,9 @@ pub struct WatchSettings {
     pub lan: Option<String>,
     /// The rendezvous (`wss://host`).
     pub rendezvous: Option<String>,
+    /// The build's own rendezvous, used if `rendezvous` (the user's) won't
+    /// let us in; `None` without a custom one or under tighter privacy.
+    pub rendezvous_fallback: Option<String>,
     /// The rendezvous admission ticket.
     pub ticket: Option<String>,
     /// The Monitor's Nostr public key, from the pairing.
@@ -139,6 +142,7 @@ impl WatchHandle {
             mic: settings.mic,
             lan: settings.lan,
             rendezvous: settings.rendezvous,
+            rendezvous_fallback: settings.rendezvous_fallback,
             ticket: settings.ticket,
             nostr_station: settings.nostr_station,
             nostr_secret,

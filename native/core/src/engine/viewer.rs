@@ -58,6 +58,11 @@ pub struct WatchConfig {
     pub lan: Option<String>,
     /// The rendezvous, `wss://host`.
     pub rendezvous: Option<String>,
+    /// The build's own rendezvous, kept in reserve behind a user's
+    /// (`rendezvous`): used if that one won't let us in (see
+    /// [`crate::net::room::connect_or_fall_back`]). `None` without a custom
+    /// relay, or under tighter privacy.
+    pub rendezvous_fallback: Option<String>,
     /// The rendezvous admission ticket.
     pub ticket: Option<String>,
     /// The Monitor's Nostr public key.
@@ -185,9 +190,10 @@ impl Watch {
         };
         let (rendezvous, rv_rx) = match (rv_on, &cfg.rendezvous) {
             (true, Some(base)) => {
-                let (h, rx) = room_net::connect(
+                let (h, rx) = room_net::connect_or_fall_back(
                     Kind::Rendezvous,
                     base,
+                    cfg.rendezvous_fallback.as_deref(),
                     false,
                     &cfg.channel_key,
                     cfg.ticket.clone(),

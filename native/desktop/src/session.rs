@@ -271,6 +271,8 @@ impl Host {
             nostr_health: store.data.settings.relay_health.clone(),
             nostr_known: keys.known,
             rendezvous: (!only).then(|| DEFAULT_RENDEZVOUS.to_owned()),
+            // No user-set rendezvous on the Desktop: nothing to fall back to.
+            rendezvous_fallback: None,
             lan_bind: (!only).then(|| SocketAddr::from((Ipv4Addr::UNSPECIFIED, port))),
             lan_ip: if only { None } else { lan_ip() },
             gate,
@@ -690,6 +692,8 @@ impl Host {
                     .clone()
                     .unwrap_or_else(|| DEFAULT_RENDEZVOUS.to_owned())
             }),
+            // A link's rendezvous is where its Monitor is: never swapped.
+            rendezvous_fallback: None,
             ticket: keys.ticket.clone(),
             nostr_station: keys.monitor_nostr.clone(),
             nostr_secret: Some(secret),

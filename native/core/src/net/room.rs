@@ -70,6 +70,30 @@ pub fn connect(
     key: &str,
     ticket: Option<String>,
 ) -> (RoomHandle, mpsc::UnboundedReceiver<RoomEvent>) {
+    connect_or_fall_back(kind, base, None, station, key, ticket)
+}
+
+/// How long a relay that took the socket gets to let us in before it counts
+/// as the wrong address (app.js's `RELAY_HELLO_MS`): a host that speaks
+/// WebSocket but not Tawny would otherwise be waited on for ever.
+pub const ADMIT_WAIT: Duration = Duration::from_secs(8);
+
+/// As [`connect`], with the build's own relay kept in reserve behind a
+/// user's (`fallback`), as app.js's `fallBackToDefault`: a relay that takes
+/// the socket but doesn't let us in within [`ADMIT_WAIT`], fails twice in a
+/// row, or refuses us for good is given up on, and `fallback` is used for the
+/// rest of the session (never traded back, so a flapping server doesn't cost
+/// a reconnect each time). Both ends apply the same rule, so they meet again
+/// there. `None`: no reserve (no custom relay, or tighter privacy).
+#[must_use]
+pub fn connect_or_fall_back(
+    kind: Kind,
+    base: &str,
+    fallback: Option<&str>,
+    station: bool,
+    key: &str,
+    ticket: Option<String>,
+) -> (RoomHandle, mpsc::UnboundedReceiver<RoomEvent>) {
     // rustls needs a crypto provider for wss://; ring builds everywhere.
     let _ = rustls::crypto::ring::default_provider().install_default();
     let (out_tx, out_rx) = mpsc::unbounded_channel();
@@ -77,23 +101,29 @@ pub fn connect(
     let (stop, stop_rx) = watch::channel(false);
     let client = RoomClient::new(kind, station, key, ticket);
     let url = client.url(base);
-    tokio::spawn(dial_loop(client, url, out_rx, ev_tx, stop_rx));
+    let fallback = fallback.map(|f| client.url(f)).filter(|f| *f != url);
+    tokio::spawn(dial_loop(client, url, fallback, out_rx, ev_tx, stop_rx));
     (RoomHandle { out: out_tx, stop }, ev_rx)
 }
 
 async fn dial_loop(
     mut client: RoomClient,
-    url: String,
+    mut url: String,
+    mut fallback: Option<String>,
     mut out: mpsc::UnboundedReceiver<Value>,
     ev: mpsc::UnboundedSender<RoomEvent>,
     mut stop: watch::Receiver<bool>,
 ) {
     let mut backoff = Duration::from_secs(1);
+    // Attempts in a row that never got us in.
+    let mut failures = 0u32;
     loop {
         if *stop.borrow() {
             return;
         }
         let mut refusal = None;
+        let mut admitted = false;
+        let mut no_admit = false;
         if let Ok(Ok((ws, _))) = tokio::time::timeout(
             Duration::from_secs(8),
             tokio_tungstenite::connect_async(url.as_str()),
@@ -102,7 +132,7 @@ async fn dial_loop(
         {
             backoff = Duration::from_secs(1);
             let (mut sink, mut stream) = ws.split();
-            let mut admitted = false;
+            let admit_by = tokio::time::Instant::now() + ADMIT_WAIT;
             for o in client.on_open() {
                 if let RoomOut::Send(s) = o {
                     let _ = sink.send(Message::text(s)).await;
@@ -136,12 +166,36 @@ async fn dial_loop(
                         None => return,
                     },
                     _ = stop.changed() => { let _ = sink.send(Message::Close(None)).await; return; }
+                    () = tokio::time::sleep_until(admit_by), if !admitted && fallback.is_some() => {
+                        no_admit = true;
+                        break;
+                    }
                 }
             }
             client.reset();
         }
         let _ = ev.send(RoomEvent::Down(refusal));
-        if refusal.is_some_and(|r| !r.retryable()) {
+        failures = if admitted { 0 } else { failures + 1 };
+        let for_good = refusal.is_some_and(|r| !r.retryable());
+        if fallback.is_some() && (no_admit || failures >= 2 || for_good) {
+            let why = if no_admit {
+                "it didn't let us in".to_owned()
+            } else if for_good {
+                format!("it refused us: {refusal:?}")
+            } else {
+                "it didn't answer twice".to_owned()
+            };
+            let _ = ev.send(RoomEvent::Log(format!(
+                "own relay unusable ({why}): using the built-in one"
+            )));
+            if let Some(f) = fallback.take() {
+                url = f;
+            }
+            failures = 0;
+            backoff = Duration::from_secs(1);
+            continue;
+        }
+        if for_good {
             let _ = ev.send(RoomEvent::Log(format!(
                 "room relay refused us for good: {refusal:?}"
             )));

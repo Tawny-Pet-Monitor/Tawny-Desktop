@@ -35,6 +35,7 @@ fn monitor_config(lan: bool, relays: Vec<String>) -> MonitorConfig {
         nostr_health: HealthBook::default(),
         nostr_known: vec![],
         rendezvous: None,
+        rendezvous_fallback: None,
         lan_bind: lan.then(|| std::net::SocketAddr::from(([127, 0, 0, 1], 0))),
         // A private address, as a phone would advertise; tests dial loopback.
         lan_ip: lan.then(|| "10.0.0.5".to_owned()),
@@ -56,6 +57,7 @@ fn watch_config(p: &Pairing, relays: Vec<String>) -> WatchConfig {
         mic: false,
         lan: p.signal.clone(),
         rendezvous: None,
+        rendezvous_fallback: None,
         ticket: None,
         nostr_station: p.nostr_station.clone(),
         nostr_secret: Some(PHONE_SK),
