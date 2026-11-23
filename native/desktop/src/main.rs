@@ -128,10 +128,34 @@ fn migrate_check() -> Result<()> {
                     items.len(),
                     names.into_iter().collect::<Vec<_>>().join(", ")
                 );
+                // The channel list's shape (never its keys): why one is skipped.
+                if let Some(list) = items
+                    .get("tawny.channels.v1")
+                    .and_then(|j| serde_json::from_str::<Vec<serde_json::Value>>(j).ok())
+                {
+                    for (i, ch) in list.iter().enumerate() {
+                        println!(
+                            "  channel {i}: id {}, key of {} characters",
+                            if ch.get("id").and_then(|v| v.as_str()).is_some() {
+                                "yes"
+                            } else {
+                                "no"
+                            },
+                            ch.get("key").and_then(|v| v.as_str()).map_or(0, str::len)
+                        );
+                    }
+                    if list.is_empty() {
+                        println!("  the channel list is empty");
+                    }
+                }
+                // The keys go into a scratch store in the app's own folder
+                // (not the shared temp folder), removed straight after.
                 let scratch =
-                    std::env::temp_dir().join(format!("tawny-check-{}", std::process::id()));
-                let mut s = store::Store::open(&scratch.join("store.json"))?;
-                let r = migrate::import(&items, &mut s);
+                    store::default_dir()?.join(format!("migrate-check-{}", std::process::id()));
+                let r = store::Store::open(&scratch.join("store.json"))
+                    .map(|mut s| migrate::import(&items, &mut s));
+                let _ = std::fs::remove_dir_all(&scratch);
+                let r = r?;
                 println!(
                     "  would bring {} channel(s), {} key entries",
                     r.channels, r.entries
