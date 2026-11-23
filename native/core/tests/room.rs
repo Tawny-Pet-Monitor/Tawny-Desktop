@@ -293,3 +293,50 @@ fn only_the_monitor_can_turn_a_viewer_away() {
         vec![(2, tawny_core::signal::lan::CLOSE_UNSIGNED)]
     );
 }
+
+/// An older phone starts counting failures afresh whenever its socket opens,
+/// so a device turned away is refused at the handshake for a while: only then
+/// does it move on from the LAN to a way where its call gets a code.
+#[test]
+fn a_turned_away_device_is_refused_at_the_handshake_for_a_while() {
+    use tawny_core::signal::lan::UNSIGNED_HOLD_MS;
+    let mut relay = LanRelay::new(KEY);
+    let mut station = RoomClient::new(Kind::Lan, true, KEY, None);
+    let mut viewer = RoomClient::new(Kind::Lan, false, KEY, None);
+    join(&mut relay, &mut station, 1, true, "192.168.1.10");
+    let out = join(&mut relay, &mut viewer, 2, false, "192.168.1.20");
+    let viewer_id = sent_to(&out, 1)[0]["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        !relay.turns_away("192.168.1.20", T0),
+        "not before it is turned away"
+    );
+
+    let kick = json!({ "type": "kick", "to": viewer_id }).to_string();
+    assert_eq!(
+        closed(&relay.on_text(1, &kick)),
+        vec![(2, tawny_core::signal::lan::CLOSE_UNSIGNED)]
+    );
+    relay.on_close(2);
+
+    let back = T0 + 1_000;
+    assert!(
+        relay.turns_away("192.168.1.20", back),
+        "its next try is refused"
+    );
+    assert!(
+        relay.turns_away("192.168.1.20", back + UNSIGNED_HOLD_MS - 1),
+        "for the whole hold"
+    );
+    assert!(
+        !relay.turns_away("192.168.1.30", back),
+        "another device is not"
+    );
+    assert!(
+        !relay.turns_away("192.168.1.20", back + UNSIGNED_HOLD_MS),
+        "and then it may try again"
+    );
+    assert!(!relay.turns_away("192.168.1.20", back + UNSIGNED_HOLD_MS + 1));
+}

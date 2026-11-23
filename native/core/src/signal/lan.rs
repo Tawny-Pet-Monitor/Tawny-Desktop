@@ -31,9 +31,16 @@ const ADMIT_TIMEOUT_MS: u64 = 5_000;
 /// Signalling frames are a few KB; anything larger is an attack.
 pub const MAX_MSG: usize = 64 * 1024;
 /// The close code for a socket the Monitor turned away for an unsigned offer.
-/// Not one `app.js` treats as final, so an older phone tries again and then
-/// goes on to Nostr or the rendezvous, where its call gets a code.
+/// Not one `app.js` treats as final.
 pub const CLOSE_UNSIGNED: u16 = 4012;
+/// How long a device turned away for an unsigned offer is refused at the
+/// handshake. An older `app.js` starts counting failures afresh whenever a
+/// socket opens, so a close after the welcome would only have it dial the
+/// LAN again, forever; refused before the socket opens, it counts each try
+/// and moves on to Nostr or the rendezvous, where its call gets a code.
+pub const UNSIGNED_HOLD_MS: u64 = 120_000;
+/// Devices remembered as turned away, at most.
+const MAX_TURNED_AWAY: usize = 64;
 
 /// A connection, as the caller numbers them.
 pub type ConnId = u64;
@@ -70,6 +77,8 @@ pub struct LanRelay {
     /// room → (peer id → connection)
     rooms: HashMap<String, HashMap<String, ConnId>>,
     per_ip: HashMap<String, usize>,
+    /// address → when its first refused handshake came (None: not yet)
+    turned_away: HashMap<String, Option<u64>>,
 }
 
 fn is_room(s: &str) -> bool {
@@ -94,6 +103,7 @@ impl LanRelay {
             members: HashMap::new(),
             rooms: HashMap::new(),
             per_ip: HashMap::new(),
+            turned_away: HashMap::new(),
         }
     }
 
@@ -106,6 +116,21 @@ impl LanRelay {
     #[must_use]
     pub fn members(&self) -> usize {
         self.members.len()
+    }
+
+    /// Whether a handshake from `ip` is refused, before the socket opens: a
+    /// device turned away for an unsigned offer, for [`UNSIGNED_HOLD_MS`]
+    /// from its first try back.
+    pub fn turns_away(&mut self, ip: &str, now_ms: u64) -> bool {
+        let Some(since) = self.turned_away.get_mut(ip) else {
+            return false;
+        };
+        let since = *since.get_or_insert(now_ms);
+        if now_ms.saturating_sub(since) < UNSIGNED_HOLD_MS {
+            return true;
+        }
+        self.turned_away.remove(ip);
+        false
     }
 
     /// A new WebSocket. `query` is the request's query string
@@ -194,9 +219,16 @@ impl LanRelay {
                 .and_then(|to| self.rooms.get(&me.room)?.get(to))
                 .copied()
                 .filter(|t| me.station && *t != conn);
-            return target
-                .map(|t| vec![LanOut::Close(t, CLOSE_UNSIGNED, "unsigned offer")])
-                .unwrap_or_default();
+            let Some(t) = target else {
+                return Vec::new();
+            };
+            if let Some(ip) = self.members.get(&t).map(|m| m.ip.clone()) {
+                if self.turned_away.len() >= MAX_TURNED_AWAY {
+                    self.turned_away.clear();
+                }
+                self.turned_away.insert(ip, None);
+            }
+            return vec![LanOut::Close(t, CLOSE_UNSIGNED, "unsigned offer")];
         }
         if !msg["type"].as_str().is_some_and(|t| RELAYED.contains(&t)) {
             return Vec::new();

@@ -13,7 +13,8 @@ use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
+use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
@@ -267,7 +268,15 @@ async fn serve_socket(
     mut stop: watch::Receiver<bool>,
 ) {
     let mut query = String::new();
+    let ip = addr.ip().to_string();
+    let refused = relay.lock().is_ok_and(|mut r| r.turns_away(&ip, now_ms()));
     let cb = |req: &Request, resp: Response| {
+        if refused {
+            // Before the socket opens: see `UNSIGNED_HOLD_MS`.
+            let mut no = ErrorResponse::new(Some("turned away: unsigned offer".into()));
+            *no.status_mut() = StatusCode::FORBIDDEN;
+            return Err(no);
+        }
         req.uri().query().unwrap_or("").clone_into(&mut query);
         Ok(resp)
     };
@@ -291,7 +300,6 @@ async fn serve_socket(
             }
         }
     });
-    let ip = addr.ip().to_string();
     let out = relay
         .lock()
         .map(|mut r| r.on_connect(conn, &query, &ip, now_ms()))
