@@ -144,6 +144,7 @@ mod imp {
             Some(Self)
         }
 
+        #[expect(clippy::unused_self, reason = "the same shape on every system")]
         pub fn reduced(&self) -> Option<bool> {
             let mut on: i32 = 1;
             // SAFETY: SPI_GETCLIENTAREAANIMATION writes one BOOL to the
