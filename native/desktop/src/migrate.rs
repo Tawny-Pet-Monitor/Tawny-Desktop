@@ -4,11 +4,12 @@
 //!
 //! The old Desktop kept them in Chromium's `localStorage` (a `LevelDB` inside
 //! its CEF profile) and its relays in `settings.json` beside it. The `LevelDB`
-//! is copied to a scratch folder and read there: the old files are never
-//! written, and nothing leaves this computer. The rules are Android's
+//! is read into memory and opened there: the old files are never written,
+//! no copy is left on disk, and nothing leaves this computer. The rules are Android's
 //! (`JsMigration.import`), plus the channels themselves and the settings.
 
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -85,39 +86,43 @@ pub fn run(store: &mut Store) -> Result<Report> {
 
 /// Every `tawny.*` item in a Chromium `localStorage` `LevelDB`, by name.
 ///
+/// The files are read into memory and the database opened there: nothing is
+/// written anywhere (a scratch copy in the shared temp folder could be read by
+/// anyone else on the computer who got there first), and the old files are
+/// never opened for writing.
+///
 /// # Errors
-/// When the copy or the database can't be read.
+/// When the files or the database can't be read.
 pub fn read_local_storage(db: &Path) -> Result<BTreeMap<String, String>> {
-    let scratch = std::env::temp_dir().join(format!("tawny-migrate-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&scratch);
-    std::fs::create_dir_all(&scratch)?;
+    let opts = rusty_leveldb::Options {
+        create_if_missing: false,
+        ..rusty_leveldb::in_memory()
+    };
+    let here = Path::new("/old");
     for f in std::fs::read_dir(db)?.flatten() {
         let name = f.file_name();
         if name == "LOCK" || !f.path().is_file() {
             continue;
         }
-        std::fs::copy(f.path(), scratch.join(&name))
-            .with_context(|| format!("copying {}", f.path().display()))?;
+        let bytes =
+            std::fs::read(f.path()).with_context(|| format!("reading {}", f.path().display()))?;
+        let mut copy = opts
+            .env
+            .open_writable_file(&here.join(&name))
+            .context("holding the old storage in memory")?;
+        copy.write_all(&bytes)?;
     }
-    let opts = rusty_leveldb::Options {
-        create_if_missing: false,
-        ..rusty_leveldb::Options::default()
-    };
-    let out = (|| -> Result<BTreeMap<String, String>> {
-        let mut ldb = rusty_leveldb::DB::open(&scratch, opts).context("opening the old storage")?;
-        let mut it = ldb.new_iter().context("reading the old storage")?;
-        let mut items = BTreeMap::new();
-        while let Some((k, v)) = rusty_leveldb::LdbIterator::next(&mut it) {
-            if let (Some(name), Some(value)) = (item_name(&k), item_value(&v))
-                && name.starts_with("tawny.")
-            {
-                items.insert(name, value);
-            }
+    let mut ldb = rusty_leveldb::DB::open(here, opts).context("opening the old storage")?;
+    let mut it = ldb.new_iter().context("reading the old storage")?;
+    let mut items = BTreeMap::new();
+    while let Some((k, v)) = rusty_leveldb::LdbIterator::next(&mut it) {
+        if let (Some(name), Some(value)) = (item_name(&k), item_value(&v))
+            && name.starts_with("tawny.")
+        {
+            items.insert(name, value);
         }
-        Ok(items)
-    })();
-    let _ = std::fs::remove_dir_all(&scratch);
-    out
+    }
+    Ok(items)
 }
 
 /// A `localStorage` record's item name: keys are `_<origin>\0\x01<name>`.

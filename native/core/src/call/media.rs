@@ -652,9 +652,12 @@ impl StationActor {
             }
             return;
         }
-        self.emit(StationEvent::Signal(
-            json!({ "type": "answer", "to": from, "sdp": { "type": "answer", "sdp": sdp } }),
-        ));
+        let mut msg =
+            json!({ "type": "answer", "to": from, "sdp": { "type": "answer", "sdp": sdp } });
+        if let Some(sm) = sas::sign_sdp(&self.cfg.channel_key, "answer", &sdp) {
+            msg["sm"] = json!(sm);
+        }
+        self.emit(StationEvent::Signal(msg));
         if let Some(v) = self.viewers.get_mut(from) {
             v.answered = true;
             for c in std::mem::take(&mut v.pending) {
@@ -1116,6 +1119,9 @@ impl ViewerActor {
 
     fn offer_msg(&self, station: &str, sdp: &str) -> Value {
         let mut msg = json!({ "type": "offer", "to": station, "sdp": { "type": "offer", "sdp": sdp }, "label": clean_label(&self.cfg.label) });
+        if let Some(sm) = sas::sign_sdp(&self.cfg.channel_key, "offer", sdp) {
+            msg["sm"] = json!(sm);
+        }
         if let Some(pid) = self.cfg.pid.as_ref().filter(|p| policy::is_bond_id(p)) {
             msg["pid"] = json!(pid);
         }

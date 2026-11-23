@@ -13,7 +13,9 @@
 //! chosen way loses the Monitor, the call is hung up and placed again on
 //! another way that still has it.
 //!
-//! As in `app.js` `showSas()`, the security code is shown only off the LAN.
+//! As in `app.js` `showSas()`, the security code is shown only off the LAN,
+//! and there only while the Monitor's answers are signed with the channel key
+//! (an older Monitor's are not, so its calls get a code wherever they go).
 
 use std::time::Duration;
 
@@ -30,6 +32,7 @@ use crate::call::media::{MediaConfig, Viewer, ViewerConfig, ViewerEvent};
 use crate::net::nostr::{self as nostr_net, ChannelEvent, ChannelHandle};
 use crate::net::room::{self as room_net, RoomEvent, RoomHandle};
 use crate::relay::health::HealthBook;
+use crate::sas::{self, Signed};
 use crate::signal::nostr::{Config as NostrConfig, Role};
 use crate::signal::room::Kind;
 
@@ -193,6 +196,7 @@ impl Watch {
             }
             _ => (None, None),
         };
+        let key = cfg.channel_key.clone();
         let (viewer, v_rx) = Viewer::start(ViewerConfig {
             channel_key: cfg.channel_key,
             pid: Some(cfg.pid),
@@ -212,6 +216,8 @@ impl Watch {
             rendezvous,
             seen: [Seen::default(), Seen::default(), Seen::default()],
             active: None,
+            unsigned: false,
+            key,
             ev,
         };
         tokio::spawn(router.run(v_rx, lan_rx, nostr_rx, rv_rx, cmd_rx));
@@ -260,6 +266,11 @@ struct Router {
     rendezvous: Option<RoomHandle>,
     seen: [Seen; 3],
     active: Option<Way>,
+    /// This call took an unsigned answer over the LAN: an older Monitor, or
+    /// someone in its place, so its code is shown after all.
+    unsigned: bool,
+    /// The channel key, for the signatures on answers.
+    key: String,
     ev: mpsc::UnboundedSender<WatchEvent>,
 }
 
@@ -371,6 +382,16 @@ impl Router {
                     self.drop_active(old);
                 }
             }
+            "answer" if self.active == Some(way) => match sas::check_frame(&self.key, &f) {
+                Signed::Forged => self.emit(WatchEvent::Log(format!(
+                    "{}: answer dropped, its signature doesn't match the channel key",
+                    way.name()
+                ))),
+                signed => {
+                    self.unsigned |= way == Way::Lan && signed == Signed::No;
+                    self.viewer.signal(f);
+                }
+            },
             _ if self.active == Some(way) => self.viewer.signal(f),
             _ => {}
         }
@@ -417,6 +438,7 @@ impl Router {
             return;
         };
         self.active = Some(way);
+        self.unsigned = false;
         self.emit(WatchEvent::Way(way.name()));
         self.viewer.signal(json!({
             "type": "welcome", "id": me, "peers": [{ "id": station, "role": "station" }]
@@ -434,7 +456,7 @@ impl Router {
             ViewerEvent::Audio(t) => self.emit(WatchEvent::Audio(t)),
             ViewerEvent::Connected => self.emit(WatchEvent::Connected),
             ViewerEvent::Sas(code) => {
-                if self.active.is_some_and(|w| w != Way::Lan) {
+                if self.active.is_some_and(|w| w != Way::Lan) || self.unsigned {
                     self.emit(WatchEvent::Sas(code));
                 }
             }

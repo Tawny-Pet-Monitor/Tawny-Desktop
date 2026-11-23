@@ -30,6 +30,10 @@ const MAX_PENDING: usize = 64;
 const ADMIT_TIMEOUT_MS: u64 = 5_000;
 /// Signalling frames are a few KB; anything larger is an attack.
 pub const MAX_MSG: usize = 64 * 1024;
+/// The close code for a socket the Monitor turned away for an unsigned offer.
+/// Not one `app.js` treats as final, so an older phone tries again and then
+/// goes on to Nostr or the rendezvous, where its call gets a code.
+pub const CLOSE_UNSIGNED: u16 = 4012;
 
 /// A connection, as the caller numbers them.
 pub type ConnId = u64;
@@ -182,6 +186,18 @@ impl LanRelay {
         let Some(me) = self.members.get(&conn) else {
             return Vec::new();
         };
+        // The Monitor's own socket turning a phone away (see `CLOSE_UNSIGNED`).
+        // Only the station may, and only someone in its room.
+        if msg["type"] == "kick" {
+            let target = msg["to"]
+                .as_str()
+                .and_then(|to| self.rooms.get(&me.room)?.get(to))
+                .copied()
+                .filter(|t| me.station && *t != conn);
+            return target
+                .map(|t| vec![LanOut::Close(t, CLOSE_UNSIGNED, "unsigned offer")])
+                .unwrap_or_default();
+        }
         if !msg["type"].as_str().is_some_and(|t| RELAYED.contains(&t)) {
             return Vec::new();
         }

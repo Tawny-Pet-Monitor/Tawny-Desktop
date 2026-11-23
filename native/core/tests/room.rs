@@ -256,3 +256,40 @@ fn close_codes_read_like_app_js() {
     assert!(Refusal::from_code(1006).retryable());
     assert!(!Refusal::from_code(4004).retryable());
 }
+
+#[test]
+fn only_the_monitor_can_turn_a_viewer_away() {
+    let mut relay = LanRelay::new(KEY);
+    let mut station = RoomClient::new(Kind::Lan, true, KEY, None);
+    let mut viewer = RoomClient::new(Kind::Lan, false, KEY, None);
+    let mut other = RoomClient::new(Kind::Lan, false, KEY, None);
+    let out = join(&mut relay, &mut station, 1, true, "192.168.1.10");
+    let station_id = sent_to(&out, 1)[0]["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    let out = join(&mut relay, &mut viewer, 2, false, "192.168.1.20");
+    let viewer_id = sent_to(&out, 1)[0]["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    join(&mut relay, &mut other, 3, false, "192.168.1.30");
+
+    let kick = |to: &str| json!({ "type": "kick", "to": to }).to_string();
+    assert_eq!(
+        relay.on_text(3, &kick(&viewer_id)),
+        vec![],
+        "a viewer can't"
+    );
+    assert_eq!(
+        relay.on_text(2, &kick(&station_id)),
+        vec![],
+        "nor the other way"
+    );
+    assert_eq!(relay.on_text(1, &kick(&station_id)), vec![], "not itself");
+    assert_eq!(relay.on_text(1, &kick("nobody")), vec![]);
+    assert_eq!(
+        closed(&relay.on_text(1, &kick(&viewer_id))),
+        vec![(2, tawny_core::signal::lan::CLOSE_UNSIGNED)]
+    );
+}

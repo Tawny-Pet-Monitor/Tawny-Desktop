@@ -15,6 +15,7 @@ use tawny_core::engine::monitor::{Monitor, MonitorConfig, MonitorEvent};
 use tawny_core::link::{self, Anchors};
 use tawny_core::net::room::{self, RoomEvent};
 use tawny_core::relay::health::HealthBook;
+use tawny_core::sas;
 use tawny_core::signal::room::Kind;
 
 const KEY: &str = "Zx9_-abcDEF0123456789";
@@ -189,5 +190,74 @@ async fn a_saved_code_about_to_lapse_is_never_put_in_the_qr() -> R {
         "SAVEDcode00",
         "a code with time left stays"
     );
+    Ok(())
+}
+
+/// Someone else on the Wi-Fi can pass the LAN relay's challenge on to a real
+/// phone and carry its frames, but can't sign an offer naming their own
+/// certificate. An offer with no signature, or one under another key, never
+/// reaches the camera, even with a good pairing code and a known phone's id.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_unsigned_offer_is_not_let_in_on_the_lan() -> R {
+    for forge in [false, true] {
+        let (monitor, mut m_rx) = Monitor::start(config()).await?;
+        let port = monitor.lan_port().ok_or("no LAN relay")?;
+        let pairing = link::parse(&monitor.pair_link()?, Anchors::default())?;
+        let (viewer, mut v_rx) = Viewer::start(ViewerConfig {
+            channel_key: KEY.into(),
+            pid: Some("0123456789abcdef0123456789abcdef".into()),
+            code: pairing.code.clone(),
+            label: "Stranger".into(),
+            name: None,
+            mic: false,
+            media: MediaConfig::default(),
+        });
+        let (wire, mut w_rx) = room::connect(
+            Kind::Lan,
+            &format!("ws://127.0.0.1:{port}"),
+            false,
+            KEY,
+            pairing.token.clone(),
+        );
+        let (mut tampered, mut refused, mut joined, mut kicked) = (false, false, false, false);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(6);
+        while tokio::time::Instant::now() < deadline && !(refused && tampered && kicked) {
+            tokio::select! {
+                Some(e) = w_rx.recv() => match e {
+                    RoomEvent::Frame(f) => viewer.signal(f),
+                    RoomEvent::Down(_) => kicked = true,
+                    _ => {}
+                },
+                Some(e) = v_rx.recv() => if let ViewerEvent::Signal(mut f) = e {
+                    if f["type"] == "offer" {
+                        let sdp = f["sdp"]["sdp"].as_str().unwrap_or("").to_owned();
+                        let o = f.as_object_mut().ok_or("not an object")?;
+                        if forge {
+                            let sm = sas::sign_sdp("someone else's key", "offer", &sdp)
+                                .ok_or("no certificate in the offer")?;
+                            o.insert("sm".into(), sm.into());
+                        } else {
+                            o.remove("sm");
+                        }
+                        tampered = true;
+                    }
+                    wire.send(f);
+                },
+                Some(e) = m_rx.recv() => match e {
+                    MonitorEvent::Joined { .. } | MonitorEvent::Capture(true) => joined = true,
+                    MonitorEvent::Log(l) if l.starts_with("offer refused") => refused = true,
+                    _ => {}
+                },
+                () = tokio::time::sleep(Duration::from_millis(100)) => {}
+            }
+        }
+        assert!(tampered, "the offer was sent");
+        assert!(refused, "the Monitor said why it refused (forged: {forge})");
+        assert!(!joined, "the camera stayed off (forged: {forge})");
+        assert!(kicked, "its socket was closed, so an older phone moves on");
+        viewer.close();
+        wire.close();
+        monitor.stop();
+    }
     Ok(())
 }

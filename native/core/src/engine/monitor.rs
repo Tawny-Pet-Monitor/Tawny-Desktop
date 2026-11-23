@@ -19,7 +19,7 @@ use libwebrtc::audio_source::native::NativeAudioSource;
 use libwebrtc::audio_track::RtcAudioTrack;
 use libwebrtc::video_source::native::NativeVideoSource;
 use libwebrtc::video_track::RtcVideoTrack;
-use serde_json::Value;
+use serde_json::{Value, json};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
@@ -30,6 +30,7 @@ use crate::net::nostr::{self as nostr_net, ChannelEvent, ChannelHandle};
 use crate::net::room::{self as room_net, LanServer, RoomEvent, RoomHandle};
 use crate::nostr::event;
 use crate::relay::health::HealthBook;
+use crate::sas::{self, Signed};
 use crate::signal::nostr::{Config as NostrConfig, Role};
 use crate::signal::room::Kind;
 
@@ -240,6 +241,7 @@ impl Monitor {
 
         let router = Router {
             station: station.clone(),
+            key: cfg.channel_key.clone(),
             gate: gate.clone(),
             routes: HashMap::new(),
             lan: lan_room.clone(),
@@ -388,6 +390,8 @@ impl Monitor {
 
 struct Router {
     station: Station,
+    /// The channel key, for the signatures on offers.
+    key: String,
     gate: Arc<Mutex<PairGate>>,
     routes: HashMap<String, Route>,
     lan: Option<RoomHandle>,
@@ -453,13 +457,44 @@ impl Router {
                     }
                 }
             }
-            _ => {
-                if let Some(from) = f["from"].as_str() {
-                    self.routes.insert(from.to_owned(), route);
-                    self.station.signal(f);
+            ty => {
+                let Some(from) = f["from"].as_str() else {
+                    return;
+                };
+                if ty == "offer" && !self.offer_ok(route, from, &f) {
+                    return;
                 }
+                self.routes.insert(from.to_owned(), route);
+                self.station.signal(f);
             }
         }
+    }
+
+    /// Whether an offer may reach the Station. On the LAN relay it must be
+    /// signed with the channel key: there no code is shown, and the relay's
+    /// own challenge proves nothing about who is at the far end of a socket
+    /// (anyone on the Wi-Fi can pass it between two Tawnys), so the signature
+    /// over the certificate is the only thing that keeps a stranger from
+    /// answering in a Viewer's place. Elsewhere an unsigned offer is an older
+    /// Tawny and is let through, its code shown; a forged one never is.
+    fn offer_ok(&self, route: Route, from: &str, f: &Value) -> bool {
+        let why = match sas::check_frame(&self.key, f) {
+            Signed::Yes => return true,
+            Signed::No if route != Route::Lan => return true,
+            Signed::No => "unsigned on the LAN",
+            Signed::Forged => "its signature doesn't match the channel key",
+        };
+        self.emit(MonitorEvent::Log(format!(
+            "offer refused from {from}: {why}"
+        )));
+        // An older phone would sit on the open socket waiting for an answer:
+        // closing it sends it on to a way where its call gets a code.
+        if route == Route::Lan {
+            self.lan
+                .iter()
+                .for_each(|h| h.send(json!({ "type": "kick", "to": from })));
+        }
+        false
     }
 
     fn on_room(&mut self, route: Route, e: RoomEvent) {
@@ -543,8 +578,9 @@ impl Router {
             }
             StationEvent::Connected { id } => self.emit(MonitorEvent::Connected { id }),
             // As in app.js `showSas()`: only paths through someone else's
-            // server get a code. On the LAN the Monitor is its own relay, and
-            // the Viewer shows no code there, so there is nothing to compare.
+            // server get a code. On the LAN the Monitor is its own relay and
+            // every offer it takes there is signed with the channel key
+            // ([`Router::offer_ok`]), so there is nothing a code would add.
             StationEvent::Sas { id, code } => {
                 if self.routes.get(&id) != Some(&Route::Lan) {
                     self.emit(MonitorEvent::Sas { id, code });

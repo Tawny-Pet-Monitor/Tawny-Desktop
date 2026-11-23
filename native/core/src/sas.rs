@@ -3,8 +3,16 @@
 //! Same recipe as `computeSas()` in `app.js`: HMAC-SHA256 with the channel key
 //! over `"tawny-sas-v1|" + fpA + "|" + fpB`, where the two DTLS fingerprints are
 //! normalised and sorted, then the first 6 bytes as Crockford base32, `XXX-XXX`.
+//!
+//! Also the signature on each offer and answer (`sm`): HMAC-SHA256 with the
+//! channel key over `"tawny-sdp-v1|" + type + "|" + fingerprint`. It ties the
+//! certificate a description names to someone holding the key, which is what
+//! lets a call over the Monitor's own LAN relay go without a code: anyone else
+//! on the Wi-Fi can carry frames between the two, but can't put their own
+//! certificate in one.
 
 use hmac::Mac;
+use serde_json::Value;
 
 use crate::ids::hmac_for;
 
@@ -79,6 +87,52 @@ pub fn code(key: &str, fp_a: &str, fp_b: &str) -> String {
     format!("{}-{}", &chars[..3], &chars[3..])
 }
 
+const SDP_DOMAIN: &str = "tawny-sdp-v1";
+
+/// What an offer's or answer's signature says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signed {
+    /// Signed with the channel key, over the one certificate it names.
+    Yes,
+    /// No signature: a Tawny from before signatures, or a relay that dropped it.
+    No,
+    /// A signature that doesn't check out, or a description it can't cover.
+    Forged,
+}
+
+/// The `sm` for a description of this `kind` (`"offer"` or `"answer"`);
+/// `None` when the description doesn't name exactly one certificate.
+#[must_use]
+pub fn sign_sdp(key: &str, kind: &str, sdp: &str) -> Option<String> {
+    let fp = sdp_fingerprint(sdp)?;
+    let mut mac = hmac_for(key);
+    mac.update(format!("{SDP_DOMAIN}|{kind}|{fp}").as_bytes());
+    Some(hex::encode(mac.finalize().into_bytes()))
+}
+
+/// Checks the signature on an `offer` or `answer` frame.
+#[must_use]
+pub fn check_frame(key: &str, f: &Value) -> Signed {
+    let Some(sm) = f.get("sm") else {
+        return Signed::No;
+    };
+    let (Some(sm), Some(kind), Some(sdp)) =
+        (sm.as_str(), f["type"].as_str(), f["sdp"]["sdp"].as_str())
+    else {
+        return Signed::Forged;
+    };
+    let (Ok(given), Some(fp)) = (hex::decode(sm), sdp_fingerprint(sdp)) else {
+        return Signed::Forged;
+    };
+    let mut mac = hmac_for(key);
+    mac.update(format!("{SDP_DOMAIN}|{kind}|{fp}").as_bytes());
+    if mac.verify_slice(&given).is_ok() {
+        Signed::Yes
+    } else {
+        Signed::Forged
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,6 +196,59 @@ mod tests {
             super::sdp_fingerprint("a=fingerprint:sha-256 zz:yy\r\n"),
             None,
             "not hex"
+        );
+    }
+
+    fn frame(kind: &str, sdp: &str, sm: Option<String>) -> Value {
+        let mut f = serde_json::json!({ "type": kind, "sdp": { "type": kind, "sdp": sdp } });
+        if let Some(sm) = sm {
+            f["sm"] = Value::String(sm);
+        }
+        f
+    }
+
+    #[test]
+    fn a_signed_description_checks_out_only_as_signed() {
+        let sdp = "v=0\r\na=fingerprint:sha-256 ab:cd:01\r\n";
+        let sm = sign_sdp("key", "offer", sdp);
+        assert!(sm.is_some());
+        assert_eq!(
+            check_frame("key", &frame("offer", sdp, sm.clone())),
+            Signed::Yes
+        );
+        assert_eq!(check_frame("key", &frame("offer", sdp, None)), Signed::No);
+        assert_eq!(
+            check_frame("other key", &frame("offer", sdp, sm.clone())),
+            Signed::Forged,
+            "someone without the key"
+        );
+        assert_eq!(
+            check_frame("key", &frame("answer", sdp, sm.clone())),
+            Signed::Forged,
+            "an offer's signature on an answer"
+        );
+        let swapped = "v=0\r\na=fingerprint:sha-256 EE:FF:02\r\n";
+        assert_eq!(
+            check_frame("key", &frame("offer", swapped, sm)),
+            Signed::Forged,
+            "another certificate under a captured signature"
+        );
+        let mut odd = frame("offer", sdp, None);
+        odd["sm"] = serde_json::json!(7);
+        assert_eq!(check_frame("key", &odd), Signed::Forged);
+    }
+
+    #[test]
+    fn the_signature_matches_js() {
+        // The same recipe in app.js (`signSdp`) gives this for this input.
+        assert_eq!(
+            sign_sdp(
+                "Zx9_-abcDEF",
+                "answer",
+                "a=fingerprint:sha-256 74:1f:BF\r\n"
+            )
+            .as_deref(),
+            Some("7c5351338af121686f74e259c1d7feb9515cfb32a8e515a363e9dec6b9b80edb")
         );
     }
 }

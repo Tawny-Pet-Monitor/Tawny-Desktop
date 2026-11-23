@@ -1,0 +1,52 @@
+[package]
+name = "tawny-core-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+tawny-core = { path = ".." }
+
+# Not part of the core's workspace.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "link"
+path = "fuzz_targets/link.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nip44"
+path = "fuzz_targets/nip44.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nip59"
+path = "fuzz_targets/nip59.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frames"
+path = "fuzz_targets/frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session"
+path = "fuzz_targets/session.rs"
+test = false
+doc = false
+bench = false
