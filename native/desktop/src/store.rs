@@ -83,6 +83,11 @@ pub struct Keys {
     pub gate: Option<String>,
     /// Viewer Nostr keys the Monitor has let in before.
     pub known: Vec<String>,
+    /// The port this Monitor's LAN relay listened on last time. It is tried
+    /// first on the next start, so the address in the phones' pairings
+    /// still reaches it after a restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lan_port: Option<u16>,
 }
 
 /// The user's settings.

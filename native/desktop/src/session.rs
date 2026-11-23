@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use slint::{ComponentHandle, Image, ModelRc, SharedString, Timer, TimerMode, VecModel, Weak};
 use tawny_core::call::media::MediaConfig;
 use tawny_core::call::policy::PairGate;
-use tawny_core::engine::monitor::{Monitor, MonitorConfig, MonitorEvent};
+use tawny_core::engine::monitor::{EngineError, Monitor, MonitorConfig, MonitorEvent};
 use tawny_core::engine::viewer::{Watch, WatchConfig, WatchEvent};
 use tawny_core::link::{self, Anchors, Pairing};
 use tokio::runtime::Runtime;
@@ -261,6 +261,7 @@ impl Host {
             .unwrap_or_default();
         let settings = &store.data.settings;
         let only = settings.relays_only && !settings.relays.is_empty();
+        let port = keys.lan_port.unwrap_or(0);
         let cfg = MonitorConfig {
             channel_key: ch.key.clone(),
             room_name: shown_name(&ch.name),
@@ -270,7 +271,7 @@ impl Host {
             nostr_health: store.data.settings.relay_health.clone(),
             nostr_known: keys.known,
             rendezvous: (!only).then(|| DEFAULT_RENDEZVOUS.to_owned()),
-            lan_bind: (!only).then(|| SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0))),
+            lan_bind: (!only).then(|| SocketAddr::from((Ipv4Addr::UNSPECIFIED, port))),
             lan_ip: if only { None } else { lan_ip() },
             gate,
             mic: true,
@@ -278,10 +279,26 @@ impl Host {
             height: 720,
             media: media(),
         };
-        let (monitor, mut rx) = self
-            .rt
-            .block_on(Monitor::start(cfg))
-            .map_err(|e| anyhow!("{e}"))?;
+        let started = match self.rt.block_on(Monitor::start(cfg.clone())) {
+            // Its port from last time is taken: another one. Phones paired
+            // with the old address reach it another way until they pair again.
+            Err(EngineError::Lan(e)) if port != 0 => {
+                eprintln!("tawny: LAN port {port} is taken ({e}); using another");
+                let mut cfg = cfg;
+                cfg.lan_bind = cfg
+                    .lan_bind
+                    .map(|_| SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)));
+                self.rt.block_on(Monitor::start(cfg))
+            }
+            other => other,
+        };
+        let (monitor, mut rx) = started.map_err(|e| anyhow!("{e}"))?;
+        // Kept with the channel: its port, and the ticket and keys minted
+        // above, which the link it's about to show hands to phones.
+        store.keys_mut(&ch.key).lan_port = monitor.lan_port();
+        if let Err(e) = store.save() {
+            eprintln!("tawny: saving the channel: {e:#}");
+        }
         let link = monitor.pair_link().map_err(|e| anyhow!("{e}"))?;
         show_link(ui, &link);
         self.open_speaker();
