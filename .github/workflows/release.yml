@@ -149,14 +149,18 @@ jobs:
         with:
           toolchain: stable
 
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: src-tauri
-
       # cef-dll-sys builds CEF's C++ wrapper with CMake's Ninja generator, which
       # needs Ninja and the MSVC compiler on PATH.
       - uses: seanmiddleditch/gha-setup-ninja@96bed6edff20d1dd61ecff9b75cc519d516e6401 # v5
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
+      # Keyed on the MSVC toolset: the cached build keeps CMake's record of
+      # where the compiler and linker are, and a runner image with a newer
+      # toolset doesn't have the old one (CMake then can't link at all).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          key: msvc-${{ env.VCToolsVersion }}
 
       - name: CEF cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
