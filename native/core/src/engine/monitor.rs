@@ -592,10 +592,12 @@ impl Router {
                     self.emit(MonitorEvent::Sas { id, code });
                 }
             }
-            StationEvent::Left { id } => {
-                self.routes.remove(&id);
-                self.emit(MonitorEvent::Left { id });
-            }
+            // The route stays: a call ending says nothing about the way to
+            // the Viewer, which is still in the room (a transport's
+            // `peer-left` removes it). Dropping it here lost the answer to
+            // the very offer that replaced the call: the old call's failure
+            // came in after that offer had set the route.
+            StationEvent::Left { id } => self.emit(MonitorEvent::Left { id }),
             StationEvent::Control(f) => self.emit(MonitorEvent::Control(f)),
             StationEvent::TalkAudio { id, track } => {
                 self.emit(MonitorEvent::TalkAudio { id, track });
