@@ -320,3 +320,74 @@ async fn my_camera_reaches_the_monitor_only_while_on() -> R {
     st.close();
     Ok(())
 }
+
+/// A Viewer's call to `st`, pumped until both ends have shown a security
+/// code for it (or `secs` pass). Returns the Viewer's code; the Monitor's
+/// events go to `seen` (its code as `sas …`).
+async fn connect(
+    st: &Station,
+    st_rx: &mut mpsc::UnboundedReceiver<StationEvent>,
+    vw: &Viewer,
+    vw_rx: &mut mpsc::UnboundedReceiver<ViewerEvent>,
+    seen: &mut Vec<String>,
+    secs: u64,
+) -> Option<String> {
+    vw.signal(json!({ "type": "welcome", "id": VIEWER_ID, "peers": [{ "id": STATION_ID, "role": "station" }] }));
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(secs);
+    let (mut mine, mut theirs) = (None, false);
+    while mine.is_none() || !theirs {
+        tokio::select! {
+            Some(e) = st_rx.recv() => match e {
+                StationEvent::Signal(f) => vw.signal(relay(f, STATION_ID)),
+                StationEvent::Joined { id, .. } => seen.push(format!("joined {id}")),
+                StationEvent::Left { id } => seen.push(format!("left {id}")),
+                StationEvent::Sas { code, .. } => {
+                    seen.push(format!("sas {}", code.as_deref().unwrap_or("none")));
+                    theirs = true;
+                }
+                _ => {}
+            },
+            Some(e) = vw_rx.recv() => match e {
+                ViewerEvent::Signal(f) => st.signal(relay(f, VIEWER_ID)),
+                ViewerEvent::Sas(code) => mine = Some(code.unwrap_or_default()),
+                _ => {}
+            },
+            () = tokio::time::sleep_until(deadline) => break,
+        }
+    }
+    mine
+}
+
+/// A Viewer whose call died without a word (its phone dropped off the Wi-Fi)
+/// calls again under the same room id, with a new connection. The Monitor
+/// lets the dead call go and takes the new one as a new call, so it shows
+/// the code that call has: renegotiating the old call onto the new
+/// certificate also connects, but left the Monitor showing the old code.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_new_call_from_the_same_viewer_replaces_its_dead_one() -> R {
+    let (st, mut st_rx) = station("CODE5678xyz");
+    let mut seen = Vec::new();
+    let (first, mut first_rx) = viewer("CODE5678xyz");
+    connect(&st, &mut st_rx, &first, &mut first_rx, &mut seen, 20)
+        .await
+        .ok_or("the first call never came up")?;
+    // Gone without a bye or a peer-left: the Monitor still holds that call.
+    first.close();
+    let (again, mut again_rx) = viewer("CODE5678xyz");
+    let code = connect(&st, &mut st_rx, &again, &mut again_rx, &mut seen, 20)
+        .await
+        .ok_or_else(|| format!("the new call was never answered: {seen:?}"))?;
+    assert!(!code.is_empty(), "the Viewer has a code");
+    assert_eq!(
+        seen.last(),
+        Some(&format!("sas {code}")),
+        "the Monitor shows the new call's code: {seen:?}"
+    );
+    assert!(
+        seen.iter().any(|e| *e == format!("left {VIEWER_ID}")),
+        "the dead call is let go: {seen:?}"
+    );
+    st.close();
+    again.close();
+    Ok(())
+}

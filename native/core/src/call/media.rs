@@ -122,6 +122,12 @@ const RETIRE_FOR: Duration = Duration::from_secs(10);
 
 /// Closes a call and parks it until libwebrtc is done with it.
 fn retire(pc: Arc<PeerConnection>) {
+    // Deaf first: closing fires a last state change tagged with the peer's
+    // id, which would otherwise reach whichever call takes that id next (a
+    // Viewer calling again) and end it.
+    pc.on_connection_state_change(None);
+    pc.on_ice_candidate(None);
+    pc.on_track(None);
     pc.close();
     let now = Instant::now();
     let mut parked = RETIRED.lock().unwrap_or_else(PoisonError::into_inner);
@@ -140,6 +146,20 @@ const OFFER: OfferOptions = OfferOptions {
     offer_to_receive_audio: None,
     offer_to_receive_video: None,
 };
+
+/// How long a Viewer's call may sit disconnected before the Viewer restarts
+/// ICE (app.js's `iceKick`): a short drop usually heals by itself.
+const ICE_KICK: Duration = Duration::from_secs(4);
+/// How long an ICE restart gets to bring the call back before the next try.
+const RESTART_WAIT: Duration = Duration::from_secs(10);
+/// Answered ICE restarts that didn't bring the call back before the Viewer
+/// gives the call up and places a new one.
+const MAX_RESTARTS: u32 = 3;
+/// Waits on an offer the Monitor hasn't answered (it is away: asleep, off
+/// the Wi-Fi) before starting over with a new call. Only one offer is ever
+/// out: piling them up had the Monitor answer a queue of stale ones when it
+/// came back.
+const MAX_UNANSWERED: u32 = 12;
 
 /// Puts H.264 first (hardware encoders on most phones), keeping the rest.
 fn prefer_h264(factory: &PeerConnectionFactory, t: &RtpTransceiver, receiving: bool) {
@@ -562,8 +582,52 @@ impl StationActor {
         Some(pc)
     }
 
+    /// Whether an offer from a Viewer this Monitor already has is a new call
+    /// rather than a renegotiation: a Viewer whose call died may place a new
+    /// one under the same room id, on a new connection (a new certificate).
+    /// Renegotiating the old call with it connects but leaves this end showing
+    /// the old call's security code; it is taken as a new call instead.
+    fn is_new_call(&self, from: &str, f: &Value) -> bool {
+        let old = self
+            .viewers
+            .get(from)
+            .and_then(|v| v.pc.current_remote_description())
+            .and_then(|d| sas::sdp_fingerprint(&d.to_string()));
+        let new = f["sdp"]["sdp"].as_str().and_then(sas::sdp_fingerprint);
+        old.is_some() && new.is_some() && old != new
+    }
+
+    /// The pairing gate for a new call: its bond id, or the code it was
+    /// paired with. A refused one is told why (`bye` / `expired`).
+    fn admit(&mut self, from: &str, f: &Value) -> bool {
+        let gate = self
+            .cfg
+            .gate
+            .check(f["pid"].as_str(), f["pc"].as_str(), now_ms());
+        if !gate.allowed() {
+            self.emit(StationEvent::Log(format!(
+                "offer refused: pairing code expired or never seen ({from})"
+            )));
+            self.emit(StationEvent::Signal(
+                json!({ "type": "bye", "to": from, "reason": "expired" }),
+            ));
+            return false;
+        }
+        if gate == Gate::Enrolled {
+            self.emit(StationEvent::Gate(self.cfg.gate.clone()));
+        }
+        true
+    }
+
     async fn on_offer(&mut self, from: &str, f: &Value) {
-        let known = self.viewers.contains_key(from);
+        let mut known = self.viewers.contains_key(from);
+        if known && self.is_new_call(from, f) {
+            self.emit(StationEvent::Log(format!(
+                "a new call from {from} replaces its old one"
+            )));
+            self.remove(from);
+            known = false;
+        }
         if !known && self.viewers.len() >= MAX_VIEWERS {
             self.emit(StationEvent::Signal(
                 json!({ "type": "bye", "to": from, "reason": "full", "max": MAX_VIEWERS }),
@@ -573,23 +637,8 @@ impl StationActor {
         // The gate sits above anything that attaches the camera and mic. A
         // phone already let in this session (a renegotiation, an ICE restart)
         // passes.
-        if !known {
-            let gate = self
-                .cfg
-                .gate
-                .check(f["pid"].as_str(), f["pc"].as_str(), now_ms());
-            if !gate.allowed() {
-                self.emit(StationEvent::Log(format!(
-                    "offer refused: pairing code expired or never seen ({from})"
-                )));
-                self.emit(StationEvent::Signal(
-                    json!({ "type": "bye", "to": from, "reason": "expired" }),
-                ));
-                return;
-            }
-            if gate == Gate::Enrolled {
-                self.emit(StationEvent::Gate(self.cfg.gate.clone()));
-            }
+        if !known && !self.admit(from, f) {
+            return;
         }
         let Some(sdp) = f["sdp"]["sdp"].as_str() else {
             return;
@@ -784,6 +833,8 @@ enum ViewerMsg {
     State(PeerConnectionState),
     Ice(IceCandidate),
     Track(MediaStreamTrack),
+    /// A timer set by [`ViewerActor::kick_in`]; stale ones carry an old number.
+    Kick(u64),
 }
 
 /// Talks to a running Viewer.
@@ -844,6 +895,9 @@ impl Viewer {
             answered: false,
             connected: false,
             pending: Vec::new(),
+            kick: 0,
+            restarts: 0,
+            unanswered: 0,
         };
         tokio::spawn(actor.run(rx));
         (Self { tx, audio, video }, ev_rx)
@@ -909,6 +963,13 @@ struct ViewerActor {
     answered: bool,
     connected: bool,
     pending: Vec<IceCandidate>,
+    /// The current kick timer's number (a newer one, or a reconnect, voids
+    /// the ones before).
+    kick: u64,
+    /// ICE restarts tried since the call was last up.
+    restarts: u32,
+    /// Kicks that found the last offer still unanswered.
+    unanswered: u32,
 }
 
 /// As for the Monitor: a dropped Viewer parks its call.
@@ -942,6 +1003,7 @@ impl ViewerActor {
                 }
                 ViewerMsg::Close => break,
                 ViewerMsg::State(s) => self.on_state(s),
+                ViewerMsg::Kick(n) => self.on_kick(n).await,
                 ViewerMsg::Ice(c) => {
                     if let Some(to) = &self.station {
                         let _ = self.ev.send(ViewerEvent::Signal(
@@ -1161,19 +1223,106 @@ impl ViewerActor {
 
     fn on_state(&mut self, s: PeerConnectionState) {
         match s {
-            PeerConnectionState::Connected if !self.connected => {
+            PeerConnectionState::Connected => {
+                // Up (again): any restart in hand is done.
+                self.kick = self.kick.wrapping_add(1);
+                self.restarts = 0;
+                self.unanswered = 0;
+                if self.connected {
+                    return;
+                }
                 self.connected = true;
                 let _ = self.ev.send(ViewerEvent::Connected);
                 let Some(pc) = self.pc.clone() else { return };
                 let code = security_code(&pc, &self.cfg.channel_key);
                 let _ = self.ev.send(ViewerEvent::Sas(code));
             }
-            PeerConnectionState::Failed => {
-                self.hang_up();
-                let _ = self.ev.send(ViewerEvent::Left);
-            }
+            // As app.js: the Viewer drives the repair. The Monitor may still
+            // be in the room (its signalling never dropped), so nothing else
+            // would ever call again; hanging up here left a Viewer on
+            // "Reconnecting" for good.
+            PeerConnectionState::Disconnected => self.kick_in(ICE_KICK),
+            PeerConnectionState::Failed => self.kick_in(Duration::ZERO),
             _ => {}
         }
+    }
+
+    /// Looks at the call again after `after`, unless it comes back first.
+    fn kick_in(&mut self, after: Duration) {
+        self.kick = self.kick.wrapping_add(1);
+        let n = self.kick;
+        let tx = self.me.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(after).await;
+            let _ = tx.send(ViewerMsg::Kick(n));
+        });
+    }
+
+    /// The call is still down: restart ICE on it, and after
+    /// [`MAX_RESTARTS`] place a new call to the same Monitor.
+    async fn on_kick(&mut self, n: u64) {
+        if n != self.kick {
+            return;
+        }
+        let (Some(pc), Some(station)) = (self.pc.clone(), self.station.clone()) else {
+            return;
+        };
+        let state = pc.connection_state();
+        if state == PeerConnectionState::Connected {
+            return;
+        }
+        if !self.answered && self.unanswered < MAX_UNANSWERED {
+            // The Monitor hasn't answered the last offer: it is away. It
+            // answers that one when it is back; another would only queue up.
+            self.unanswered += 1;
+            self.kick_in(RESTART_WAIT);
+            return;
+        }
+        let stuck = !matches!(
+            state,
+            PeerConnectionState::Disconnected | PeerConnectionState::Failed
+        );
+        if stuck && self.restarts < MAX_RESTARTS {
+            // Still connecting (a slow network, a new call): give it time,
+            // as many waits as a broken call gets restarts.
+            self.restarts += 1;
+            self.kick_in(RESTART_WAIT);
+            return;
+        }
+        if self.restarts >= MAX_RESTARTS || self.unanswered >= MAX_UNANSWERED || stuck {
+            let _ = self.ev.send(ViewerEvent::Log(format!(
+                "the call didn't come back ({state:?}): calling the Monitor again"
+            )));
+            self.hang_up();
+            let _ = self.ev.send(ViewerEvent::Left);
+            self.restarts = 0;
+            self.unanswered = 0;
+            self.call(&station).await;
+            self.kick_in(RESTART_WAIT);
+            return;
+        }
+        self.restarts += 1;
+        let _ = self.ev.send(ViewerEvent::Log(format!(
+            "call {:?}: ICE restart {}",
+            pc.connection_state(),
+            self.restarts
+        )));
+        let restart = OfferOptions {
+            ice_restart: true,
+            ..OFFER
+        };
+        let Ok(offer) = pc.create_offer(restart).await else {
+            return;
+        };
+        let sdp = camera_direction(&offer.to_string(), self.my.on);
+        if pc.set_local_description(offer).await.is_err() {
+            return;
+        }
+        self.my.offered = self.my.on;
+        self.answered = false;
+        let msg = self.offer_msg(&station, &sdp);
+        let _ = self.ev.send(ViewerEvent::Signal(msg));
+        self.kick_in(RESTART_WAIT);
     }
 }
 
