@@ -51,6 +51,10 @@ pub const RELAYED: [&str; 12] = [
 const MAX_SEEN: usize = 4000;
 const HEARTBEAT_MS: u64 = 15_000;
 const SEEK_MS: u64 = 3_000;
+/// A Handheld that joined this recently doesn't join again when the Monitor
+/// says `here` (that `here` is the answer to it).
+const REJOIN_GAP_MS: u64 = 1_000;
+
 /// How many Handheld keys a Monitor remembers.
 pub const MAX_REMEMBERED: usize = 8;
 const PEER_TIMEOUT_MS: u64 = 50_000;
@@ -647,6 +651,16 @@ impl Session {
                             session,
                         },
                     );
+                    // A Monitor newly here (it restarted, or came back after
+                    // going quiet) doesn't know this phone yet. Join it now,
+                    // before the call that `peer-joined` starts: otherwise
+                    // the offer reaches it ahead of the next heartbeat's
+                    // join, is refused as not-member, and the call waits on
+                    // an answer that never comes. (A `here` that answers
+                    // the join just sent needs none.)
+                    if now_ms.saturating_sub(self.last_join) >= REJOIN_GAP_MS {
+                        self.join(now_ms, &mut out);
+                    }
                     out.push(Output::Emit(
                         json!({ "type": "peer-joined", "id": from, "role": "station" }),
                     ));

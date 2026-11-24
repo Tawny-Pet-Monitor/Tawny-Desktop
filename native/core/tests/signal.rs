@@ -347,3 +347,51 @@ fn a_here_before_open_is_ignored_and_the_join_brings_the_monitor() -> R {
     );
     Ok(())
 }
+
+/// The dogfood case: the Monitor restarts, says `here` to the phone it
+/// remembers, and the phone (which sees a new Monitor session) calls at once.
+/// It joins the new instance first, so its offer is taken, not refused as
+/// not-member while the call waits for an answer that never comes.
+#[test]
+fn a_phone_joins_a_restarted_monitor_before_calling_it() -> R {
+    let mut before = station()?;
+    before.open(T0);
+    let mut v = viewer(KEY, VIEWER_SK)?;
+    let here = deliver(&v.open(T0), &mut before, T0);
+    deliver(&here, &mut v, T0);
+
+    let v_pub = event::public_key(&VIEWER_SK)?;
+    let mut after = Session::new(Config {
+        channel_key: KEY.into(),
+        role: Role::Station,
+        secret: STATION_SK,
+        station_pub: String::new(),
+        remembered: vec![v_pub],
+    })?;
+    let now = T0 + 60_000;
+    let hello = after.open(now);
+    let v_out = deliver(&hello, &mut v, now + 10);
+    let e = emitted(&v_out);
+    assert!(
+        e.iter()
+            .any(|f| f["type"] == "peer-joined" && f["role"] == "station"),
+        "the phone sees the Monitor come back: {e:?}"
+    );
+    // The phone's answer to `here` reaches the Monitor before its offer.
+    let m_out = deliver(&v_out, &mut after, now + 20);
+    assert!(rejects(&m_out).is_empty(), "{m_out:?}");
+    assert!(
+        emitted(&m_out)
+            .iter()
+            .any(|f| f["type"] == "peer-joined" && f["role"] == "viewer"),
+        "the restarted Monitor knows the phone again"
+    );
+    let sent = v.send(
+        &json!({ "type": "offer", "to": after.public_key(), "sdp": {} }),
+        now + 30,
+    );
+    let got = deliver(&sent, &mut after, now + 40);
+    assert!(rejects(&got).is_empty(), "the offer is taken: {got:?}");
+    assert_eq!(emitted(&got)[0]["type"], "offer");
+    Ok(())
+}

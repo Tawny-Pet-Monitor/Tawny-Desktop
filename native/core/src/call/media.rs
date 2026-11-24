@@ -540,7 +540,12 @@ impl StationActor {
                     v.pending.push(c);
                 }
             }
-            "bye" => self.remove(&from),
+            "bye" => {
+                if self.viewers.contains_key(&from) {
+                    self.emit(StationEvent::Log(format!("call with {from}: hung up")));
+                }
+                self.remove(&from);
+            }
             "peer-left" => self.remove(f["id"].as_str().unwrap_or("")),
             "" => {}
             _ if self.viewers.contains_key(&from) => self.emit(StationEvent::Control(f.clone())),
@@ -756,7 +761,15 @@ impl StationActor {
                     code,
                 });
             }
-            PeerConnectionState::Failed | PeerConnectionState::Closed => self.remove(id),
+            PeerConnectionState::Failed | PeerConnectionState::Closed => {
+                if self.viewers.contains_key(id) {
+                    self.emit(StationEvent::Log(format!("call with {id}: {s:?}, let go")));
+                }
+                self.remove(id);
+            }
+            PeerConnectionState::Disconnected => {
+                self.emit(StationEvent::Log(format!("call with {id}: Disconnected")));
+            }
             _ => {}
         }
     }

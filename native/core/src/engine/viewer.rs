@@ -223,6 +223,7 @@ impl Watch {
             seen: [Seen::default(), Seen::default(), Seen::default()],
             active: None,
             unsigned: false,
+            call_up: false,
             key,
             ev,
         };
@@ -275,6 +276,8 @@ struct Router {
     /// This call took an unsigned answer over the LAN: an older Monitor, or
     /// someone in its place, so its code is shown after all.
     unsigned: bool,
+    /// The call on the active way is connected (media flowing).
+    call_up: bool,
     /// The channel key, for the signatures on answers.
     key: String,
     ev: mpsc::UnboundedSender<WatchEvent>,
@@ -412,6 +415,7 @@ impl Router {
         let Some(way) = self.active.take() else {
             return;
         };
+        self.call_up = false;
         let gone = gone.unwrap_or_default();
         self.viewer
             .signal(json!({ "type": "peer-left", "id": gone, "from": gone }));
@@ -420,8 +424,20 @@ impl Router {
 
     /// Picks the way the call goes over, once one has the Monitor.
     fn choose(&mut self) {
-        if self.active.is_some() {
-            return;
+        // The LAN has the Monitor while the call sits on another way and
+        // isn't up (a Monitor that restarted: its other ways may not take
+        // this phone yet): move to the LAN, where it is let straight in. A
+        // call that is up stays where it is.
+        if let Some(way) = self.active {
+            if way == Way::Lan || self.call_up || self.seen[slot(Way::Lan)].station.is_none() {
+                return;
+            }
+            let old = self.seen[slot(way)].station.clone();
+            self.drop_active(old);
+            self.emit(WatchEvent::Log(format!(
+                "{}: call not up and the LAN has the Monitor, moving there",
+                way.name()
+            )));
         }
         let has = |w: Way| self.seen[slot(w)].station.is_some();
         let pick = if has(Way::Lan) {
@@ -460,14 +476,20 @@ impl Router {
             }
             ViewerEvent::Video(t) => self.emit(WatchEvent::Video(t)),
             ViewerEvent::Audio(t) => self.emit(WatchEvent::Audio(t)),
-            ViewerEvent::Connected => self.emit(WatchEvent::Connected),
+            ViewerEvent::Connected => {
+                self.call_up = true;
+                self.emit(WatchEvent::Connected);
+            }
             ViewerEvent::Sas(code) => {
                 if self.active.is_some_and(|w| w != Way::Lan) || self.unsigned {
                     self.emit(WatchEvent::Sas(code));
                 }
             }
             ViewerEvent::Refused(r) => self.emit(WatchEvent::Refused(r)),
-            ViewerEvent::Left => self.emit(WatchEvent::Left),
+            ViewerEvent::Left => {
+                self.call_up = false;
+                self.emit(WatchEvent::Left);
+            }
             ViewerEvent::Control(f) => self.emit(WatchEvent::Control(f)),
             ViewerEvent::Log(l) => self.emit(WatchEvent::Log(l)),
         }
