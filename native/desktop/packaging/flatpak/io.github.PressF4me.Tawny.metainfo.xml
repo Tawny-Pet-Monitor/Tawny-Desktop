@@ -60,9 +60,9 @@
   </supports>
 
   <releases>
-    <release version="0.2.0" date="2026-11-22">
+    <release version="0.2.0" date="2026-11-25">
       <description>
-        <p>Tawny for the desktop is now a native app: it starts faster, uses less memory and no longer carries a web browser inside it. Everything stays where it was. Your channels come across from the previous version on their own.</p>
+        <p>Tawny for the desktop is now a native app: it starts faster, uses less memory and no longer carries a web browser inside it. Everything stays where it was. Your channels come across from the previous version on their own. A call that loses its network path repairs itself, a phone held upright shows the right way up, and you can zoom the picture with the mouse wheel and drag it.</p>
       </description>
     </release>
     <release version="0.1.13" date="2026-11-15">
