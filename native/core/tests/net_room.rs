@@ -196,3 +196,59 @@ async fn without_a_reserve_a_dead_relay_is_only_redialled() -> R {
     assert!(downs >= 2, "redialled {downs} times");
     Ok(())
 }
+
+/// An own relay that answers with a refusal is working: it is not swapped
+/// for the reserve (as app.js, whose fatal codes never fall back). The other
+/// end still uses it, and the two would never meet on the reserve.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_own_relay_that_refuses_is_not_swapped_out() -> R {
+    use futures_util::SinkExt as _;
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+    use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+
+    let server = LanServer::start("127.0.0.1:0".parse()?, KEY).await?;
+    let reserve = format!("ws://127.0.0.1:{}", server.port);
+    // A relay that takes each socket and closes it at once with 4010, "no
+    // Monitor in this room": retryable, and it is answering.
+    let refusing = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let own = format!("ws://127.0.0.1:{}", refusing.local_addr()?.port());
+    tokio::spawn(async move {
+        while let Ok((tcp, _)) = refusing.accept().await {
+            if let Ok(mut ws) = tokio_tungstenite::accept_async(tcp).await {
+                let _ = ws
+                    .send(Message::Close(Some(CloseFrame {
+                        code: CloseCode::from(4010),
+                        reason: "monitor offline".into(),
+                    })))
+                    .await;
+            }
+        }
+    });
+    let (_viewer, mut rx) = connect_or_fall_back(
+        Kind::Lan,
+        &own,
+        Some(&reserve),
+        false,
+        KEY,
+        Some("TICKETxx".into()),
+    );
+    let mut downs = 0;
+    let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(e) = rx.recv().await {
+            match e {
+                RoomEvent::Down(r) => {
+                    assert_eq!(r, Some(Refusal::MonitorOffline));
+                    downs += 1;
+                }
+                RoomEvent::Log(l) => assert!(!l.contains("built-in"), "swapped on a refusal: {l}"),
+                RoomEvent::Frame(f) => assert!(f["type"] != "welcome", "let in on the reserve"),
+                RoomEvent::Up => {}
+            }
+        }
+    })
+    .await;
+    assert!(downs >= 2, "dialled the refusing relay {downs} times");
+    server.stop();
+    Ok(())
+}

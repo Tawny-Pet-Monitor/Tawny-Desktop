@@ -485,7 +485,11 @@ impl Router {
                     self.emit(WatchEvent::Sas(code));
                 }
             }
-            ViewerEvent::Refused(r) => self.emit(WatchEvent::Refused(r)),
+            ViewerEvent::Refused(r) => {
+                // A `bye` hangs the call up without a Left: it is not up.
+                self.call_up = false;
+                self.emit(WatchEvent::Refused(r));
+            }
             ViewerEvent::Left => {
                 self.call_up = false;
                 self.emit(WatchEvent::Left);

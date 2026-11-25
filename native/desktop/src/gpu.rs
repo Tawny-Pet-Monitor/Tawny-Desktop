@@ -8,9 +8,9 @@
 //!
 //! The renderer is picked before the window opens and can't change after, so
 //! the first frame reads which OpenGL it got. A software one is noted in the
-//! data folder; from the next start Tawny uses the software renderer, and for
-//! the rest of this run the picture is redrawn less often. `SLINT_BACKEND`,
-//! when set, always wins.
+//! data folder; for a week of starts Tawny uses the software renderer, then
+//! tries OpenGL again; for the rest of this run the picture is redrawn less
+//! often. `SLINT_BACKEND`, when set, always wins.
 
 use std::ffi::{CStr, c_char, c_void};
 use std::path::{Path, PathBuf};
@@ -26,6 +26,9 @@ const MARK: &str = "software-gl";
 
 /// This run draws through a software OpenGL.
 static SOFTWARE_GL: AtomicBool = AtomicBool::new(false);
+
+/// How long a software OpenGL is believed before OpenGL is tried again.
+const RECHECK: Duration = Duration::from_hours(7 * 24);
 
 /// How often the picture is redrawn on a software OpenGL: 10 a second.
 const SLOW_FRAME: Duration = Duration::from_millis(100);
@@ -52,7 +55,21 @@ fn mark(dir: &Path) -> PathBuf {
 /// OpenGL. Call before the first window. Does nothing if `SLINT_BACKEND` is
 /// set or nothing was noted.
 pub fn choose_renderer(dir: &Path) {
-    if std::env::var_os("SLINT_BACKEND").is_some() || !mark(dir).exists() {
+    if std::env::var_os("SLINT_BACKEND").is_some() {
+        return;
+    }
+    let mark = mark(dir);
+    let Ok(age) = std::fs::metadata(&mark)
+        .and_then(|m| m.modified())
+        .map(|t| t.elapsed().unwrap_or_default())
+    else {
+        return;
+    };
+    // Kept a week, then OpenGL gets another try (and is read again on its
+    // first frame): a driver installed since, or one run over a remote
+    // desktop, doesn't leave Tawny on the CPU for good.
+    if age > RECHECK {
+        let _ = std::fs::remove_file(&mark);
         return;
     }
     match slint::BackendSelector::new()

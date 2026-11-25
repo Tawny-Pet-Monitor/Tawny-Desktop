@@ -64,7 +64,9 @@ fn picture(f: Frame) -> (f32, f32, f32, f32, f32) {
 /// scaler blends it into the bars (a hairline, seen on the web page).
 fn axis(t: f32, zoom: f32, start: f32, size: f32, view: f32, edge: f32) -> f32 {
     let span = zoom * size;
-    if span <= view {
+    // Not wider than the stage by more than the two edges: centred. (Below
+    // that the two bounds cross, and `clamp` would panic.)
+    if span <= view + 2.0 * edge {
         return (view - span) / 2.0 - zoom * start;
     }
     t.clamp(view - zoom * (start + size) + edge, -zoom * start - edge)
@@ -178,6 +180,26 @@ mod tests {
         assert!(near(v.x + 2.0 * 437.5, (1280.0 - 810.0) / 2.0), "{v:?}");
         let moved = drag(v, 300.0, 0.0, TALL);
         assert!(near(moved.x, v.x), "no sideways room: {moved:?}");
+    }
+
+    #[test]
+    fn a_picture_just_wider_than_the_stage_never_panics() {
+        // The review's cases: an upright phone picture between 3.160x and
+        // 3.177x, and a slight zoom of a picture that fills the stage.
+        for z in [3.16_f32, 3.165, 3.17, 3.177] {
+            let v = around(View::WHOLE, z, 640.0, 360.0, TALL);
+            assert!(v.x.is_finite() && v.y.is_finite(), "{v:?}");
+        }
+        let f = super::Frame {
+            stage_w: 1280.0,
+            stage_h: 708.0,
+            video_w: 640.0,
+            video_h: 360.0,
+        };
+        for z in [1.0167_f32, 1.018, 1.0191] {
+            let v = around(View::WHOLE, z, 100.0, 100.0, f);
+            assert!(v.x.is_finite() && v.y.is_finite(), "{v:?}");
+        }
     }
 
     #[test]

@@ -115,7 +115,7 @@ async fn dial_loop(
     mut stop: watch::Receiver<bool>,
 ) {
     let mut backoff = Duration::from_secs(1);
-    // Attempts in a row that never got us in.
+    // Dials in a row whose socket never opened: the relay isn't answering.
     let mut failures = 0u32;
     loop {
         if *stop.borrow() {
@@ -124,12 +124,14 @@ async fn dial_loop(
         let mut refusal = None;
         let mut admitted = false;
         let mut no_admit = false;
+        let mut opened = false;
         if let Ok(Ok((ws, _))) = tokio::time::timeout(
             Duration::from_secs(8),
             tokio_tungstenite::connect_async(url.as_str()),
         )
         .await
         {
+            opened = true;
             backoff = Duration::from_secs(1);
             let (mut sink, mut stream) = ws.split();
             let admit_by = tokio::time::Instant::now() + ADMIT_WAIT;
@@ -175,15 +177,18 @@ async fn dial_loop(
             client.reset();
         }
         let _ = ev.send(RoomEvent::Down(refusal));
-        failures = if admitted { 0 } else { failures + 1 };
+        failures = if opened { 0 } else { failures + 1 };
         let for_good = refusal.is_some_and(|r| !r.retryable());
-        if fallback.is_some() && (no_admit || failures >= 2 || for_good) {
+        // As app.js: only a relay that isn't answering is swapped out (no
+        // socket twice in a row, or a socket that never let us in). One that
+        // answers with a refusal (full, already running, expired, Monitor
+        // offline) is working: the other end, which still uses it, would
+        // never be met on the built-in one, and the refusal says what to do.
+        if fallback.is_some() && (no_admit || failures >= 2) {
             let why = if no_admit {
-                "it didn't let us in".to_owned()
-            } else if for_good {
-                format!("it refused us: {refusal:?}")
+                "it didn't let us in"
             } else {
-                "it didn't answer twice".to_owned()
+                "it didn't answer twice"
             };
             let _ = ev.send(RoomEvent::Log(format!(
                 "own relay unusable ({why}): using the built-in one"

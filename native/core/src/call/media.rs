@@ -119,6 +119,10 @@ fn camera_direction(sdp: &str, sending: bool) -> String {
 /// receiver, and Safari ignores it: an iPhone watching a Monitor held upright
 /// saw the room on its side (2026-11-25). Without it, libwebrtc turns the
 /// pixels before encoding, so every receiver gets an upright picture.
+///
+/// The Monitor strips it from a Viewer's offer; a Viewer strips it from the
+/// offers it sends (never from an answer: an answer agreeing CVO means the far
+/// end already sends frames for the receiver to turn).
 fn without_cvo(sdp: &str) -> String {
     sdp.split_inclusive('\n')
         .filter(|l| !(l.starts_with("a=extmap:") && l.contains("urn:3gpp:video-orientation")))
@@ -640,14 +644,14 @@ impl StationActor {
 
     async fn on_offer(&mut self, from: &str, f: &Value) {
         let mut known = self.viewers.contains_key(from);
-        if known && self.is_new_call(from, f) {
-            self.emit(StationEvent::Log(format!(
-                "a new call from {from} replaces its old one"
-            )));
-            self.remove(from);
+        // A new call from a phone that has one: its seat is reused, and the
+        // old call goes only once the new offer has passed the gate and
+        // parsed (a refused one leaves the working call alone).
+        let replacing = known && self.is_new_call(from, f);
+        if replacing {
             known = false;
         }
-        if !known && self.viewers.len() >= MAX_VIEWERS {
+        if !known && !replacing && self.viewers.len() >= MAX_VIEWERS {
             self.emit(StationEvent::Signal(
                 json!({ "type": "bye", "to": from, "reason": "full", "max": MAX_VIEWERS }),
             ));
@@ -665,6 +669,12 @@ impl StationActor {
         let Ok(desc) = SessionDescription::parse(&without_cvo(sdp), SdpType::Offer) else {
             return;
         };
+        if replacing {
+            self.emit(StationEvent::Log(format!(
+                "a new call from {from} replaces its old one"
+            )));
+            self.remove(from);
+        }
         if !known {
             let Some(pc) = self.new_peer(from) else {
                 return;
@@ -1078,7 +1088,7 @@ impl ViewerActor {
                 let (Some(pc), Some(sdp)) = (self.pc.clone(), f["sdp"]["sdp"].as_str()) else {
                     return;
                 };
-                let Ok(desc) = SessionDescription::parse(&without_cvo(sdp), SdpType::Answer) else {
+                let Ok(desc) = SessionDescription::parse(sdp, SdpType::Answer) else {
                     return;
                 };
                 if let Err(e) = pc.set_remote_description(desc).await {
@@ -1141,6 +1151,11 @@ impl ViewerActor {
         self.answered = false;
         self.connected = false;
         self.pending.clear();
+        // The next call starts with its own repairs: none of this one's
+        // counts, and no timer of this one's left to fire on it.
+        self.restarts = 0;
+        self.unanswered = 0;
+        self.kick = self.kick.wrapping_add(1);
     }
 
     async fn call(&mut self, station: &str) {
@@ -1196,7 +1211,7 @@ impl ViewerActor {
         let Ok(offer) = pc.create_offer(OFFER).await else {
             return;
         };
-        let sdp = camera_direction(&offer.to_string(), self.my.on);
+        let sdp = without_cvo(&camera_direction(&offer.to_string(), self.my.on));
         if pc.set_local_description(offer).await.is_err() {
             return;
         }
@@ -1235,7 +1250,7 @@ impl ViewerActor {
         let Ok(offer) = pc.create_offer(OFFER).await else {
             return;
         };
-        let sdp = camera_direction(&offer.to_string(), self.my.on);
+        let sdp = without_cvo(&camera_direction(&offer.to_string(), self.my.on));
         if let Err(e) = pc.set_local_description(offer).await {
             let _ = self
                 .ev
@@ -1291,7 +1306,13 @@ impl ViewerActor {
         if n != self.kick {
             return;
         }
-        let (Some(pc), Some(station)) = (self.pc.clone(), self.station.clone()) else {
+        let Some(station) = self.station.clone() else {
+            return;
+        };
+        let Some(pc) = self.pc.clone() else {
+            // The last new call couldn't even be set up: try again.
+            self.call(&station).await;
+            self.kick_in(RESTART_WAIT);
             return;
         };
         let state = pc.connection_state();
@@ -1322,8 +1343,6 @@ impl ViewerActor {
             )));
             self.hang_up();
             let _ = self.ev.send(ViewerEvent::Left);
-            self.restarts = 0;
-            self.unanswered = 0;
             self.call(&station).await;
             self.kick_in(RESTART_WAIT);
             return;
@@ -1338,11 +1357,15 @@ impl ViewerActor {
             ice_restart: true,
             ..OFFER
         };
+        // A restart that can't be made now is tried again, never dropped:
+        // nothing else would look at a Failed call again.
         let Ok(offer) = pc.create_offer(restart).await else {
+            self.kick_in(RESTART_WAIT);
             return;
         };
-        let sdp = camera_direction(&offer.to_string(), self.my.on);
+        let sdp = without_cvo(&camera_direction(&offer.to_string(), self.my.on));
         if pc.set_local_description(offer).await.is_err() {
+            self.kick_in(RESTART_WAIT);
             return;
         }
         self.my.offered = self.my.on;
