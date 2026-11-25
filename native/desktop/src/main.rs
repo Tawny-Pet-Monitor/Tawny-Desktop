@@ -11,6 +11,7 @@ mod app;
 mod audio;
 mod camera;
 mod chime;
+mod gpu;
 mod migrate;
 mod motion;
 mod qr;
@@ -25,6 +26,7 @@ mod tip;
 mod tr;
 mod video;
 mod webm;
+mod zoom;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -95,7 +97,9 @@ fn main() -> Result<()> {
         Err(e) => eprintln!("tawny: reading the old Desktop's storage: {e:#}"),
     }
     let store = Rc::new(RefCell::new(opened));
+    gpu::choose_renderer(&store::default_dir()?);
     let ui = AppWindow::new()?;
+    gpu::watch(&ui, store::default_dir()?);
     motion::follow(&ui);
     let _scene = SceneDriver::attach(&ui);
     let host = session::Host::attach(&ui, store.clone())?;

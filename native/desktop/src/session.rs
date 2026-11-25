@@ -26,7 +26,7 @@ use tokio::runtime::Runtime;
 
 use crate::app::shown_name;
 use crate::store::{Channel, Role, Store};
-use crate::{AppWindow, Live};
+use crate::{AppWindow, Live, zoom};
 
 /// The build's Nostr relays, when the user lists none of their own.
 pub const DEFAULT_RELAYS: &[&str] = &[
@@ -230,6 +230,7 @@ impl Host {
         *self.speaker.borrow_mut() = None;
         let live = ui.global::<Live>();
         live.set_has_video(false);
+        reset_zoom(&live);
         live.set_has_pip(false);
         live.set_camera_on(false);
         FEATURED.store(false, Ordering::Relaxed);
@@ -732,6 +733,7 @@ impl Host {
         live.set_role("viewer".into());
         live.set_connecting(true);
         live.set_has_video(false);
+        reset_zoom(&live);
         live.set_dot("idle".into());
         live.set_status(crate::tr::t("Connecting").into());
         live.set_peers(0);
@@ -1025,6 +1027,7 @@ fn wire(ui: &AppWindow) {
     });
     wire_monitor(ui);
     wire_viewer(ui);
+    wire_zoom(ui);
 }
 
 /// The Monitor's keys, and pairing (copy, paste, join).
@@ -1159,6 +1162,87 @@ fn wire_viewer(ui: &AppWindow) {
         }
     });
     wire_viewer_media(ui);
+}
+
+thread_local! {
+    /// Where the zoomed picture was when the mouse went down: a drag moves it
+    /// from there.
+    static ZOOM_PRESS: Cell<zoom::View> = const { Cell::new(zoom::View::WHOLE) };
+    /// Hides the zoom chip a moment after the last change.
+    static ZOOM_CHIP: Timer = Timer::default();
+}
+
+fn zoom_view(live: &Live<'_>) -> zoom::View {
+    zoom::View {
+        zoom: live.get_zoom(),
+        x: live.get_zoom_x(),
+        y: live.get_zoom_y(),
+    }
+}
+
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a picture's side is far below the 2^24 an f32 holds exactly"
+)]
+fn zoom_frame(live: &Live<'_>) -> zoom::Frame {
+    let size = live.get_video().size();
+    zoom::Frame {
+        stage_w: live.get_stage_w(),
+        stage_h: live.get_stage_h(),
+        video_w: size.width as f32,
+        video_h: size.height as f32,
+    }
+}
+
+fn set_zoom(live: &Live<'_>, v: zoom::View) {
+    live.set_zoom(v.zoom);
+    live.set_zoom_x(v.x);
+    live.set_zoom_y(v.y);
+}
+
+/// The picture back to whole (a new call, or the end of one).
+fn reset_zoom(live: &Live<'_>) {
+    set_zoom(live, zoom::View::WHOLE);
+    live.set_zoom_text(SharedString::new());
+}
+
+/// A Viewer's own zoom (zoom.rs): the wheel zooms at the pointer, a drag
+/// moves the zoomed picture, and the level shows for a moment.
+fn wire_zoom(ui: &AppWindow) {
+    let live = ui.global::<Live>();
+    let w = ui.as_weak();
+    live.on_zoom_wheel(move |dy, x, y| {
+        let Some(ui) = w.upgrade() else { return };
+        let live = ui.global::<Live>();
+        // Slint counts a turn away from you (up) as positive; zoom.rs takes
+        // the web's sign, where up is negative.
+        let v = zoom::wheel(zoom_view(&live), -dy, x, y, zoom_frame(&live));
+        set_zoom(&live, v);
+        live.set_zoom_text(zoom::label(v).into());
+        let w = ui.as_weak();
+        ZOOM_CHIP.with(|t| {
+            t.start(TimerMode::SingleShot, Duration::from_secs(2), move || {
+                if let Some(ui) = w.upgrade() {
+                    ui.global::<Live>().set_zoom_text(SharedString::new());
+                }
+            });
+        });
+    });
+    let w = ui.as_weak();
+    live.on_zoom_press(move || {
+        if let Some(ui) = w.upgrade() {
+            ZOOM_PRESS.with(|p| p.set(zoom_view(&ui.global::<Live>())));
+        }
+    });
+    let w = ui.as_weak();
+    live.on_zoom_drag(move |dx, dy| {
+        let Some(ui) = w.upgrade() else { return };
+        let live = ui.global::<Live>();
+        let from = ZOOM_PRESS.with(Cell::get);
+        if from.zoomed() {
+            set_zoom(&live, zoom::drag(from, dx, dy, zoom_frame(&live)));
+        }
+    });
 }
 
 /// The Viewer's camera, snapshot and record keys.
@@ -1361,6 +1445,9 @@ fn scanned(text: &str) {
 /// The Monitor's own camera: its stage, or the corner while a Viewer's
 /// camera has the stage. On a Viewer, its own camera in the corner.
 fn show_own_picture(img: Image) {
+    if !OWN_DRAWN.with(|t| crate::gpu::draw_now(&mut t.borrow_mut())) {
+        return;
+    }
     host(|h| {
         // A Viewer's camera that went quiet (turned off) gives the stage back.
         let stale = h
@@ -1421,8 +1508,18 @@ fn show_featured(id: &str, img: Option<Image>) {
     });
 }
 
+thread_local! {
+    /// When each picture was last drawn (gpu.rs slows them on a software
+    /// OpenGL).
+    static OWN_DRAWN: RefCell<Option<std::time::Instant>> = const { RefCell::new(None) };
+    static FAR_DRAWN: RefCell<Option<std::time::Instant>> = const { RefCell::new(None) };
+}
+
 /// The Monitor's picture, onto the call's stage.
 fn show_far_picture(img: Option<Image>) {
+    if img.is_some() && !FAR_DRAWN.with(|t| crate::gpu::draw_now(&mut t.borrow_mut())) {
+        return;
+    }
     HOST.with(|h| {
         let Some(host) = h.borrow().clone() else {
             return;
@@ -1444,6 +1541,15 @@ fn show_far_picture(img: Option<Image>) {
                 live.set_video(img);
                 live.set_has_video(true);
                 live.set_connecting(false);
+                // A turned picture or a resized window: keep the zoomed
+                // picture inside its own edges.
+                let v = zoom_view(&live);
+                if v.zoomed() {
+                    let kept = zoom::keep_inside(v, zoom_frame(&live));
+                    if kept != v {
+                        set_zoom(&live, kept);
+                    }
+                }
             }
             None => live.set_has_video(false),
         }

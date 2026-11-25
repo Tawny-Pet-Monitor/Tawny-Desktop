@@ -48,6 +48,7 @@ const SCREENS: &[(&str, &str)] = &[
     ("live", "live-station-dimmed"),
     ("live", "live-viewer-lenses"),
     ("live", "live-viewer-coach"),
+    ("live", "live-viewer-zoomed"),
     ("live", "live-station-coach"),
     ("channels", "sheet-row-menu"),
     ("channels", "sheet-del-confirm"),
@@ -217,6 +218,47 @@ fn stage_live(ui: &AppWindow, name: &str) {
     let talk = name.ends_with("-talk");
     live.set_talkflag(talk);
     live.set_mic_muted(talk);
+    // The Viewer's own zoom: a picture whose quarters can be told apart,
+    // zoomed 2.5x at a point in its upper-left quarter.
+    let zoomed = name.ends_with("-zoomed");
+    live.set_has_video(zoomed);
+    live.set_zoom(1.0);
+    live.set_zoom_x(0.0);
+    live.set_zoom_y(0.0);
+    if zoomed {
+        live.set_video(quarters());
+        let f = crate::zoom::Frame {
+            stage_w: 1280.0,
+            stage_h: 708.0,
+            video_w: 640.0,
+            video_h: 360.0,
+        };
+        let v = crate::zoom::around(crate::zoom::View::WHOLE, 2.5, 380.0, 220.0, f);
+        live.set_zoom(v.zoom);
+        live.set_zoom_x(v.x);
+        live.set_zoom_y(v.y);
+        live.set_zoom_text(crate::zoom::label(v).into());
+    }
+}
+
+/// A 640x360 test picture: four coloured quarters inside a white frame.
+fn quarters() -> slint::Image {
+    let (width, height) = (640u32, 360u32);
+    let mut buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(width, height);
+    for (n, px) in buf.make_mut_slice().iter_mut().enumerate() {
+        let n = u32::try_from(n).unwrap_or(0);
+        let (col, row) = (n % width, n / width);
+        let frame = col < 6 || row < 6 || col >= width - 6 || row >= height - 6;
+        let (r, g, b) = match (frame, col < width / 2, row < height / 2) {
+            (true, _, _) => (255, 255, 255),
+            (false, true, true) => (214, 72, 102),
+            (false, false, true) => (240, 190, 120),
+            (false, true, false) => (90, 140, 200),
+            (false, false, false) => (120, 180, 110),
+        };
+        *px = slint::Rgba8Pixel { r, g, b, a: 255 };
+    }
+    slint::Image::from_rgba8(buf)
 }
 
 /// Two channels like the reference's: one this device monitors, one it views.

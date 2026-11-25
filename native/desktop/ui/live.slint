@@ -64,6 +64,18 @@ export global Live {
     in-out property <int> lens;
     // A zoom level shown while it changes ("2.0×"); empty hides it.
     in-out property <string> zoom-text;
+    // Viewer: its own zoom of the picture (zoom.rs): the scale, and where
+    // the scaled picture sits on the stage. The wheel zooms at the pointer,
+    // a drag moves the zoomed picture.
+    in-out property <float> zoom: 1;
+    in-out property <length> zoom-x;
+    in-out property <length> zoom-y;
+    // The stage's size, for zoom.rs (kept up to date by the page).
+    in-out property <length> stage-w;
+    in-out property <length> stage-h;
+    callback zoom-wheel(length, length, length);
+    callback zoom-press();
+    callback zoom-drag(length, length);
 
     callback chime(string);
     callback torch();
@@ -717,14 +729,44 @@ export component LivePage inherits Rectangle {
             vertical-stretch: 1;
             background: Theme.stage;
             clip: true;
+            init => {
+                Live.stage-w = self.width;
+                Live.stage-h = self.height;
+            }
+            changed width => {
+                Live.stage-w = self.width;
+            }
+            changed height => {
+                Live.stage-h = self.height;
+            }
 
             if Live.has-video: Image {
-                width: 100%;
-                height: 100%;
+                x: Live.zoom-x;
+                y: Live.zoom-y;
+                width: parent.width * Live.zoom;
+                height: parent.height * Live.zoom;
                 source: Live.video;
                 image-fit: contain;
                 accessible-role: image;
                 accessible-label: Live.role == "viewer" ? @tr("The Monitor’s camera") : @tr("This camera");
+            }
+            // Under every key on the stage: only the picture itself zooms.
+            if Live.has-video && Live.role == "viewer": TouchArea {
+                mouse-cursor: Live.zoom > 1.005 ? (self.pressed ? MouseCursor.grabbing : MouseCursor.grab) : MouseCursor.default;
+                scroll-event(e) => {
+                    Live.zoom-wheel(e.delta-y, self.mouse-x, self.mouse-y);
+                    accept
+                }
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down {
+                        Live.zoom-press();
+                    }
+                }
+                moved => {
+                    if self.pressed {
+                        Live.zoom-drag(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y);
+                    }
+                }
             }
             if Live.connecting && !Live.has-video: Lantern {
                 accessible-role: text;
