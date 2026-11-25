@@ -111,6 +111,20 @@ fn camera_direction(sdp: &str, sending: bool) -> String {
     out
 }
 
+/// The far end's description without the video-orientation header
+/// extension (CVO, `urn:3gpp:video-orientation`), so it is never negotiated.
+///
+/// A phone's camera hands over frames sideways with "turn me 90°" attached.
+/// With CVO agreed, libwebrtc sends them as they are and leaves the turn to the
+/// receiver, and Safari ignores it: an iPhone watching a Monitor held upright
+/// saw the room on its side (2026-11-25). Without it, libwebrtc turns the
+/// pixels before encoding, so every receiver gets an upright picture.
+fn without_cvo(sdp: &str) -> String {
+    sdp.split_inclusive('\n')
+        .filter(|l| !(l.starts_with("a=extmap:") && l.contains("urn:3gpp:video-orientation")))
+        .collect()
+}
+
 /// Closed calls, kept a while before they are dropped. libwebrtc goes on
 /// calling a call's observer from its own threads after `close()` (the ICE
 /// state settling), and the observer lives in the Rust `PeerConnection`:
@@ -648,7 +662,7 @@ impl StationActor {
         let Some(sdp) = f["sdp"]["sdp"].as_str() else {
             return;
         };
-        let Ok(desc) = SessionDescription::parse(sdp, SdpType::Offer) else {
+        let Ok(desc) = SessionDescription::parse(&without_cvo(sdp), SdpType::Offer) else {
             return;
         };
         if !known {
@@ -1064,7 +1078,7 @@ impl ViewerActor {
                 let (Some(pc), Some(sdp)) = (self.pc.clone(), f["sdp"]["sdp"].as_str()) else {
                     return;
                 };
-                let Ok(desc) = SessionDescription::parse(sdp, SdpType::Answer) else {
+                let Ok(desc) = SessionDescription::parse(&without_cvo(sdp), SdpType::Answer) else {
                     return;
                 };
                 if let Err(e) = pc.set_remote_description(desc).await {
@@ -1341,7 +1355,7 @@ impl ViewerActor {
 
 #[cfg(test)]
 mod tests {
-    use super::{camera_direction, clean_label};
+    use super::{camera_direction, clean_label, without_cvo};
 
     #[test]
     fn a_long_device_name_is_cut_at_a_word() {
@@ -1376,5 +1390,20 @@ mod tests {
              m=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:1\r\na=recvonly\r\n"
         );
         assert_eq!(camera_direction(SDP, true), SDP, "camera on: unchanged");
+    }
+
+    #[test]
+    fn the_orientation_extension_is_left_out() {
+        let offer = "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n\
+                     a=extmap:3 urn:3gpp:video-orientation\r\n\
+                     a=extmap:4 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\r\n\
+                     a=sendrecv\r\n";
+        assert_eq!(
+            without_cvo(offer),
+            "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n\
+             a=extmap:4 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\r\n\
+             a=sendrecv\r\n"
+        );
+        assert_eq!(without_cvo(SDP), SDP, "nothing else changes");
     }
 }
