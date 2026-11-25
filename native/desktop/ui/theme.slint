@@ -1,0 +1,53 @@
+// Tawny's palette and type, from web/style.css (:root and its dark block).
+// Every screen reads its colours from here, so light and dark are one switch.
+
+import "fonts/Mukta-Regular.ttf";
+import "fonts/Mukta-SemiBold.ttf";
+import "fonts/MaShanZheng.ttf";
+import { Palette } from "std-widgets.slint";
+
+export global Theme {
+    // "system", "light" or "dark", as the web app's theme toggle.
+    in-out property <string> mode: "system";
+    out property <bool> dark: mode == "dark" || (mode != "light" && Palette.color-scheme == ColorScheme.dark);
+    // Animations off (the system's setting, or the app's own switch).
+    in-out property <bool> still: false;
+
+    out property <color> bg: dark ? #191410 : #fbf4f1;
+    out property <color> panel: dark ? #241d16 : #ffffff;
+    out property <color> raise: dark ? #2f261c : #f2ecf1;
+    out property <color> line: dark ? #4a3b2b : #e6dad3;
+    out property <color> fg: dark ? #efe5d5 : #33323d;
+    out property <color> dim: dark ? #a99a85 : #5a5364;
+    out property <color> berry: dark ? #c79b64 : #d24b6d;
+    out property <color> berry-d: dark ? #a67f4c : #a83c58;
+    out property <color> sky: dark ? #a6b489 : #5b93b8;
+    out property <color> live: dark ? #db5a4a : #d8452f;
+    out property <color> on-accent: dark ? #191410 : #ffffff;
+    out property <color> blush: dark ? transparent : #fdecef;
+    out property <color> stage: #0c0d12;
+    out property <color> live-ink: dark ? #db5a4a : #b23a22;
+    // The paused amber: the same in both themes, like a lit LED.
+    out property <color> alert: #e0a63c;
+    // Accents lifted toward white, for marks on the video.
+    out property <color> berry-lit: berry.mix(#ffffff, 0.76);
+    out property <color> sky-lit: sky.mix(#ffffff, 0.76);
+    // The warm dark glass that sits over the picture, in either theme.
+    out property <color> glass: #17130fad;
+    out property <color> glass-deep: #130f0ce6;
+    out property <color> glass-line: #fff6ec2e;
+    out property <color> glass-fg: #f7f1e8;
+    out property <color> glass-dim: #d6c9b8;
+
+    out property <length> r-card: 16px;
+    out property <length> r-ctl: 11px;
+    out property <length> r-chip: 7px;
+
+    out property <string> display-font: "Ma Shan Zheng";
+    out property <string> text-font: "Mukta";
+    // Mukta's 600 ships as its own family, so weight 600 is asked for by name.
+    out property <string> strong-font: "Mukta SemiBold";
+
+    // One beat for small state changes; zero when animations are off.
+    out property <duration> quick: still ? 0ms : 140ms;
+}

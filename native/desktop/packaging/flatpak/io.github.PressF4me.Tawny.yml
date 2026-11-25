@@ -1,0 +1,82 @@
+# Tawny for Linux, as a Flatpak: the native (Slint) build.
+#
+# Local build (on the build machine, from desktop-native/):
+#   tools/build-flatpak.sh
+#
+# Flathub builds with no network, so everything is a pinned source here: the
+# Rust crates come from cargo-sources.json (regenerate with
+# tools/update-cargo-sources.sh whenever Cargo.lock changes), and libwebrtc is
+# the exact archive webrtc-sys would otherwise download at build time.
+#
+# The Flathub copy of this file swaps the two `dir` sources for `type: git` +
+# the release tag.
+
+id: io.github.PressF4me.Tawny
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  # webrtc-sys compiles against libwebrtc's own libc++, which needs clang 21+.
+  - org.freedesktop.Sdk.Extension.llvm22
+command: tawny
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # Camera: V4L2 devices opened directly.
+  - --device=all
+  # Microphone for talk-back, speakers for the stream and the chimes.
+  - --socket=pulseaudio
+  # WebRTC, the relays, the rendezvous, and the Monitor's LAN listener.
+  - --share=network
+  # Snapshots land in Pictures/Tawny, clips in Videos/Tawny.
+  - --filesystem=xdg-pictures/Tawny:create
+  - --filesystem=xdg-videos/Tawny:create
+
+modules:
+  - name: tawny
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm22/bin
+      prepend-ld-library-path: /usr/lib/sdk/llvm22/lib
+      env:
+        CARGO_HOME: /run/build/tawny/cargo
+        CARGO_NET_OFFLINE: 'true'
+        CC: clang
+        CXX: clang++
+        LIBCLANG_PATH: /usr/lib/sdk/llvm22/lib
+        # webrtc-sys builds against this instead of downloading libwebrtc.
+        LK_CUSTOM_WEBRTC: /run/build/tawny/webrtc
+        # Never NVIDIA's hardware codecs (see desktop-native/.cargo/config.toml).
+        CUDA_HOME: /nonexistent/tawny-builds-without-cuda
+    build-commands:
+      - cargo --offline build --release --manifest-path desktop-native/Cargo.toml
+      - install -Dm755 desktop-native/target/release/tawny /app/bin/tawny
+      - install -Dm644 desktop-native/packaging/io.github.PressF4me.Tawny.desktop -t /app/share/applications
+      - install -Dm644 desktop-native/packaging/flatpak/io.github.PressF4me.Tawny.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 desktop-native/packaging/io.github.PressF4me.Tawny.svg /app/share/icons/hicolor/scalable/apps/io.github.PressF4me.Tawny.svg
+    sources:
+      - type: dir
+        path: ../..
+        dest: desktop-native
+        skip:
+          - target
+          - dist
+          - shots
+          - shots-es
+          - .flatpak-builder
+          - build-dir
+          - repo
+      # The engine, beside it as `path = "../core"` expects.
+      - type: dir
+        path: ../../../core
+        dest: core
+        skip:
+          - target
+      - type: archive
+        url: https://github.com/livekit/rust-sdks/releases/download/webrtc-a545de4/webrtc-linux-x64-release.zip
+        sha256: 2ece73b9a72a2cacd73d0c62ac3a414e202f37885c3c8f49dddb43c1443ac0bd
+        dest: webrtc
+      - cargo-sources.json

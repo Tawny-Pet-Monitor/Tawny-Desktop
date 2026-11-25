@@ -1,0 +1,1065 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"POT-Creation-Date: 2026-11-22 06:15+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: ui/app.slint:39
+msgctxt "AppWindow"
+msgid "Waiting for the Viewer"
+msgstr ""
+
+#. A pairing link opened (#join): the Monitor's name, and a warning if any.
+#: ui/app.slint:67
+msgctxt "AppWindow"
+msgid "the monitor"
+msgstr ""
+
+#: ui/app.slint:97
+msgctxt "AppWindow"
+msgid "Hold the Monitor’s code in frame."
+msgstr ""
+
+#: ui/app.slint:152
+msgctxt "AppWindow"
+msgid "Pick this device’s job"
+msgstr ""
+
+#: ui/app.slint:153
+msgctxt "AppWindow"
+msgid "Back to channels"
+msgstr ""
+
+#: ui/app.slint:154
+msgctxt "AppWindow"
+msgid "Leave it with the pet"
+msgstr ""
+
+#: ui/app.slint:155
+msgctxt "AppWindow"
+msgid ""
+"Sends camera and microphone, answers on its own, plays chimes, and shows a "
+"pairing code for your phone."
+msgstr ""
+
+#: ui/app.slint:156
+msgctxt "AppWindow"
+msgid "Keep it with you"
+msgstr ""
+
+#: ui/app.slint:157
+msgctxt "AppWindow"
+msgid "Watch and listen, hold to talk, ring a chime, save a snapshot."
+msgstr ""
+
+#: ui/channels.slint:121
+msgctxt "ChannelRow"
+msgid "Resume as Monitor"
+msgstr ""
+
+#: ui/channels.slint:122
+msgctxt "ChannelRow"
+msgid "Resume as Viewer"
+msgstr ""
+
+#: ui/channels.slint:123
+msgctxt "ChannelRow"
+msgid "Choose Monitor or Viewer"
+msgstr ""
+
+#: ui/channels.slint:132
+msgctxt "ChannelRow"
+msgid "key {}…"
+msgstr ""
+
+#: ui/channels.slint:160
+msgctxt "ChannelRow"
+msgid "Options for {}"
+msgstr ""
+
+#: ui/channels.slint:285
+msgctxt "EmptyState"
+msgid "Nothing paired yet"
+msgstr ""
+
+#: ui/channels.slint:297
+msgctxt "EmptyState"
+msgid ""
+"Set up the phone that stays with your pet as The Monitor, then scan its "
+"pairing code on this one."
+msgstr ""
+
+#: ui/channels.slint:311
+msgctxt "EmptyState"
+msgid "Set this up"
+msgstr ""
+
+#: ui/channels.slint:335 ui/channels.slint:384
+msgctxt "SupportCard"
+msgid "Support Tawny"
+msgstr ""
+
+#: ui/channels.slint:393
+msgctxt "SupportCard"
+msgid "Buy a coffee, or tip in Bitcoin"
+msgstr ""
+
+#: ui/channels.slint:422 ui/channels.slint:433
+msgctxt "ServersLink"
+msgid "Servers (advanced)"
+msgstr ""
+
+#: ui/channels.slint:516
+msgctxt "Channels"
+msgid "Pet Monitor"
+msgstr ""
+
+#: ui/channels.slint:524
+msgctxt "Channels"
+msgid "Support Tawny"
+msgstr ""
+
+#: ui/channels.slint:532
+msgctxt "Channels"
+msgid "New channel"
+msgstr ""
+
+#: ui/channels.slint:555
+msgctxt "Channels"
+msgid "Channels"
+msgstr ""
+
+#: ui/channels.slint:567
+msgctxt "Channels"
+msgid "Join a Monitor"
+msgstr ""
+
+#: ui/channels.slint:569
+msgctxt "Channels"
+msgid ""
+"Point your phone’s camera at the pairing code shown by The Monitor. It "
+"opens this page already set up."
+msgstr ""
+
+#: ui/channels.slint:577
+msgctxt "Channels"
+msgid "Scan pairing code"
+msgstr ""
+
+#: ui/channels.slint:584
+msgctxt "Channels"
+msgid ""
+"Video and audio travel straight between your devices. The server only "
+"introduces the two phones to each other, and never gets the key that unlocks "
+"the picture."
+msgstr ""
+
+#: ui/channels.slint:590
+msgctxt "Channels"
+msgid ""
+"Tawny is free and unlocks nothing for money — chipping in only helps pay "
+"the running costs."
+msgstr ""
+
+#. What it is now, in the words the toast says it.
+#: ui/chrome.slint:106
+msgctxt "ThemeToggle"
+msgid "Theme: dark"
+msgstr ""
+
+#. What it is now, in the words the toast says it.
+#: ui/chrome.slint:106
+msgctxt "ThemeToggle"
+msgid "Theme: light"
+msgstr ""
+
+#. What it is now, in the words the toast says it.
+#: ui/chrome.slint:106
+msgctxt "ThemeToggle"
+msgid "Theme: follow system"
+msgstr ""
+
+#: ui/chrome.slint:107
+msgctxt "ThemeToggle"
+msgid "Change theme"
+msgstr ""
+
+#: ui/chrome.slint:199
+msgctxt "AppBar"
+msgid "Back"
+msgstr ""
+
+#. The Monitor's name from the link.
+#: ui/join.slint:9
+msgctxt "Join"
+msgid "the monitor"
+msgstr ""
+
+#: ui/join.slint:54
+msgctxt "Join"
+msgid "Pairing code accepted"
+msgstr ""
+
+#: ui/join.slint:68
+msgctxt "Join"
+msgid "You’re about to join"
+msgstr ""
+
+#: ui/join.slint:81
+msgctxt "Join"
+msgid "as a Viewer."
+msgstr ""
+
+#: ui/join.slint:114
+msgctxt "Join"
+msgid "Join now"
+msgstr ""
+
+#: ui/join.slint:115
+msgctxt "Join"
+msgid "Not now"
+msgstr ""
+
+#: ui/live.slint:22
+msgctxt "Live"
+msgid "Connecting"
+msgstr ""
+
+#: ui/live.slint:45
+msgctxt "Live"
+msgid "Check this code matches the one on the other phone:"
+msgstr ""
+
+#: ui/live.slint:441
+msgctxt "Rail"
+msgid "Sound level at the far end"
+msgstr ""
+
+#: ui/live.slint:455
+msgctxt "Rail"
+msgid "Viewers are announced with a sound"
+msgstr ""
+
+#: ui/live.slint:465
+msgctxt "Rail"
+msgid "Announced"
+msgstr ""
+
+#: ui/live.slint:494
+msgctxt "Rail"
+msgid "Phones watching"
+msgstr ""
+
+#: ui/live.slint:549
+msgctxt "Rail"
+msgid "Monitor battery"
+msgstr ""
+
+#: ui/live.slint:725
+msgctxt "LivePage"
+msgid "The Monitor’s camera"
+msgstr ""
+
+#: ui/live.slint:725
+msgctxt "LivePage"
+msgid "This camera"
+msgstr ""
+
+#: ui/live.slint:729
+msgctxt "LivePage"
+msgid "Connecting"
+msgstr ""
+
+#: ui/live.slint:769
+msgctxt "LivePage"
+msgid "Listening to you"
+msgstr ""
+
+#: ui/live.slint:868
+msgctxt "LivePage"
+msgid "Talking"
+msgstr ""
+
+#: ui/live.slint:868
+msgctxt "LivePage"
+msgid "Hold to talk"
+msgstr ""
+
+#: ui/live.slint:963
+msgctxt "LivePage"
+msgid "Dog toy"
+msgstr ""
+
+#: ui/live.slint:964
+msgctxt "LivePage"
+msgid "Psp psp psp"
+msgstr ""
+
+#: ui/live.slint:965
+msgctxt "LivePage"
+msgid "Meow"
+msgstr ""
+
+#: ui/live.slint:966
+msgctxt "LivePage"
+msgid "Good boy"
+msgstr ""
+
+#: ui/live.slint:967
+msgctxt "LivePage"
+msgid "Bell"
+msgstr ""
+
+#: ui/live.slint:1004
+msgctxt "LivePage"
+msgid "Safety code"
+msgstr ""
+
+#: ui/live.slint:1011
+msgctxt "LivePage"
+msgid "Looks right"
+msgstr ""
+
+#: ui/live.slint:1015
+msgctxt "LivePage"
+msgid "Disconnect"
+msgstr ""
+
+#: ui/live.slint:1040
+msgctxt "LivePage"
+msgid "Chime"
+msgstr ""
+
+#: ui/live.slint:1048
+msgctxt "LivePage"
+msgid "Light"
+msgstr ""
+
+#: ui/live.slint:1060
+msgctxt "LivePage"
+msgid "Mute"
+msgstr ""
+
+#: ui/live.slint:1069
+msgctxt "LivePage"
+msgid "My camera"
+msgstr ""
+
+#: ui/live.slint:1076
+msgctxt "LivePage"
+msgid "Snapshot"
+msgstr ""
+
+#: ui/live.slint:1083
+msgctxt "LivePage"
+msgid "Record"
+msgstr ""
+
+#: ui/live.slint:1094
+msgctxt "LivePage"
+msgid "Hang up"
+msgstr ""
+
+#: ui/live.slint:1103
+msgctxt "LivePage"
+msgid "Flip camera"
+msgstr ""
+
+#: ui/live.slint:1110
+msgctxt "LivePage"
+msgid "Mute mic"
+msgstr ""
+
+#: ui/live.slint:1122
+msgctxt "LivePage"
+msgid "Dim screen"
+msgstr ""
+
+#: ui/live.slint:1129
+msgctxt "LivePage"
+msgid "End call"
+msgstr ""
+
+#: ui/live.slint:1145 ui/live.slint:1164
+msgctxt "LivePage"
+msgid "On air — tap to wake the screen"
+msgstr ""
+
+#: ui/live.slint:1179
+msgctxt "LivePage"
+msgid ""
+"Tap the little phone to see who’s watching this camera, by name and phone."
+msgstr ""
+
+#: ui/live.slint:1180
+msgctxt "LivePage"
+msgid ""
+"Once a phone is watching, dim the screen. The stream keeps running and the "
+"battery lasts far longer."
+msgstr ""
+
+#: ui/live.slint:1181
+msgctxt "LivePage"
+msgid "Switch between the front and back camera."
+msgstr ""
+
+#: ui/live.slint:1182
+msgctxt "LivePage"
+msgid "Stop monitoring. Viewers can’t look in until you start again."
+msgstr ""
+
+#: ui/live.slint:1184
+msgctxt "LivePage"
+msgid "Hold this to talk to your pet. Let go and the room stops hearing you."
+msgstr ""
+
+#: ui/live.slint:1185
+msgctxt "LivePage"
+msgid ""
+"Play a sound on the Monitor — a squeaky toy, a meow, a bell — to call "
+"them over."
+msgstr ""
+
+#: ui/live.slint:1186
+msgctxt "LivePage"
+msgid ""
+"Tap the little phone to see who’s watching with you, by name and phone. "
+"You can change your own name there too."
+msgstr ""
+
+#: ui/live.slint:1187
+msgctxt "LivePage"
+msgid "Turn on the Monitor’s light to see into a dark room."
+msgstr ""
+
+#: ui/live.slint:1188
+msgctxt "LivePage"
+msgid "Save a photo of what the Monitor sees right now."
+msgstr ""
+
+#: ui/live.slint:1189
+msgctxt "LivePage"
+msgid ""
+"Hang up here. The Monitor keeps watching, so you can look in again any time."
+msgstr ""
+
+#: ui/live.slint:1303
+msgctxt "LivePage"
+msgid "Skip"
+msgstr ""
+
+#: ui/live.slint:1323
+msgctxt "LivePage"
+msgid "Got it"
+msgstr ""
+
+#: ui/live.slint:1323
+msgctxt "LivePage"
+msgid "Next"
+msgstr ""
+
+#: ui/pair.slint:11
+msgctxt "WatchPair"
+msgid "Waiting for the Viewer"
+msgstr ""
+
+#: ui/pair.slint:20
+msgctxt "WatchPair"
+msgid "The Monitor"
+msgstr ""
+
+#: ui/pair.slint:21
+msgctxt "WatchPair"
+msgid "Show this to the Viewer"
+msgstr ""
+
+#: ui/pair.slint:56
+msgctxt "WatchPair"
+msgid "Pairing code"
+msgstr ""
+
+#: ui/pair.slint:73
+msgctxt "WatchPair"
+msgid "Can’t scan? Send this link instead"
+msgstr ""
+
+#: ui/pair.slint:98
+msgctxt "WatchPair"
+msgid "Copied"
+msgstr ""
+
+#: ui/pair.slint:98
+msgctxt "WatchPair"
+msgid "Copy pairing link"
+msgstr ""
+
+#: ui/pair.slint:120
+msgctxt "WatchPair"
+msgid "Start watching now"
+msgstr ""
+
+#: ui/pair.slint:121
+msgctxt "WatchPair"
+msgid "Set up later"
+msgstr ""
+
+#: ui/setup.slint:9
+msgctxt "SetupRole"
+msgid "This device"
+msgstr ""
+
+#: ui/setup.slint:10
+msgctxt "SetupRole"
+msgid "Which job is it doing?"
+msgstr ""
+
+#: ui/setup.slint:11
+msgctxt "SetupRole"
+msgid "Back"
+msgstr ""
+
+#: ui/setup.slint:12
+msgctxt "SetupRole"
+msgid "Stays with your pet"
+msgstr ""
+
+#: ui/setup.slint:13
+msgctxt "SetupRole"
+msgid ""
+"Plug it in and point the camera. It sends video and sound, answers on its "
+"own, and shows a code for the Viewer to scan."
+msgstr ""
+
+#: ui/setup.slint:14
+msgctxt "SetupRole"
+msgid "Comes with you"
+msgstr ""
+
+#: ui/setup.slint:15
+msgctxt "SetupRole"
+msgid ""
+"See what the Monitor sees, listen in, hold to talk back, ring a chime, or "
+"save a snapshot."
+msgstr ""
+
+#: ui/setup.slint:40
+msgctxt "SetupRole"
+msgid "The Monitor"
+msgstr ""
+
+#: ui/setup.slint:47
+msgctxt "SetupRole"
+msgid "The Viewer"
+msgstr ""
+
+#: ui/sheets2.slint:67
+msgctxt "WhoSheet"
+msgid "Who’s here"
+msgstr ""
+
+#: ui/sheets2.slint:75 ui/sheets2.slint:104
+msgctxt "WhoSheet"
+msgid "No name given"
+msgstr ""
+
+#: ui/sheets2.slint:75 ui/sheets2.slint:112
+msgctxt "WhoSheet"
+msgid "Monitor"
+msgstr ""
+
+#: ui/sheets2.slint:75 ui/sheets2.slint:112
+msgctxt "WhoSheet"
+msgid "Viewer"
+msgstr ""
+
+#: ui/sheets2.slint:75 ui/sheets2.slint:119
+msgctxt "WhoSheet"
+msgid "You"
+msgstr ""
+
+#: ui/sheets2.slint:130
+msgctxt "WhoSheet"
+msgid ""
+"The Monitor is on an older Tawny, so it can’t share who else is watching."
+msgstr ""
+
+#: ui/sheets2.slint:133
+msgctxt "WhoSheet"
+msgid "Change my name"
+msgstr ""
+
+#: ui/sheets2.slint:134
+msgctxt "WhoSheet"
+msgid "Done"
+msgstr ""
+
+#: ui/sheets2.slint:144
+msgctxt "MyNameSheet"
+msgid "What should the others call you?"
+msgstr ""
+
+#: ui/sheets2.slint:146
+msgctxt "MyNameSheet"
+msgid "Your name"
+msgstr ""
+
+#: ui/sheets2.slint:151
+msgctxt "MyNameSheet"
+msgid ""
+"Everyone on this camera sees it next to this device. Leave it empty to show "
+"just the device."
+msgstr ""
+
+#: ui/sheets2.slint:154
+msgctxt "MyNameSheet"
+msgid "Not now"
+msgstr ""
+
+#: ui/sheets2.slint:155
+msgctxt "MyNameSheet"
+msgid "Save"
+msgstr ""
+
+#: ui/sheets2.slint:169
+msgctxt "PairSheet"
+msgid "Pair a Viewer"
+msgstr ""
+
+#: ui/sheets2.slint:171
+msgctxt "PairSheet"
+msgid ""
+"Point your phone’s camera at this code. It opens Tawny already joined to "
+"{}."
+msgstr ""
+
+#: ui/sheets2.slint:189
+msgctxt "PairSheet"
+msgid "Pairing code"
+msgstr ""
+
+#: ui/sheets2.slint:218
+msgctxt "PairSheet"
+msgid "Copy link"
+msgstr ""
+
+#: ui/sheets2.slint:219
+msgctxt "PairSheet"
+msgid "Done"
+msgstr ""
+
+#: ui/sheets2.slint:230
+msgctxt "ScannerSheet"
+msgid "Hold the Monitor’s code in frame."
+msgstr ""
+
+#: ui/sheets2.slint:232
+msgctxt "ScannerSheet"
+msgid "Scan pairing code"
+msgstr ""
+
+#: ui/sheets2.slint:246
+msgctxt "ScannerSheet"
+msgid "Camera"
+msgstr ""
+
+#: ui/sheets2.slint:275
+msgctxt "ScannerSheet"
+msgid "Paste link instead"
+msgstr ""
+
+#: ui/sheets2.slint:276
+msgctxt "ScannerSheet"
+msgid "Cancel"
+msgstr ""
+
+#: ui/sheets2.slint:316
+msgctxt "ServersSheet"
+msgid "Servers"
+msgstr ""
+
+#: ui/sheets2.slint:320 ui/sheets2.slint:349
+msgctxt "ServersSheet"
+msgid "Nostr relays"
+msgstr ""
+
+#: ui/sheets2.slint:355
+msgctxt "ServersSheet"
+msgid ""
+"How your devices find each other. List your own relays (up to 5, one per "
+"line) to use only those. A relay only ever sees sealed envelopes: never your "
+"video, never your pairing key."
+msgstr ""
+
+#: ui/sheets2.slint:360
+msgctxt "ServersSheet"
+msgid "Last check on this computer"
+msgstr ""
+
+#: ui/sheets2.slint:372 ui/sheets2.slint:421
+msgctxt "ServersSheet"
+msgid "Use only my relays"
+msgstr ""
+
+#: ui/sheets2.slint:427
+msgctxt "ServersSheet"
+msgid ""
+"Turns off Tawny’s backup server too. Your relays are tested before this is "
+"switched on."
+msgstr ""
+
+#: ui/sheets2.slint:455
+msgctxt "ServersSheet"
+msgid "Cancel"
+msgstr ""
+
+#: ui/sheets2.slint:456
+msgctxt "ServersSheet"
+msgid "Save"
+msgstr ""
+
+#: ui/sheets2.slint:469 ui/sheets2.slint:506
+msgctxt "OnlySheet"
+msgid "Use only my relays"
+msgstr ""
+
+#: ui/sheets2.slint:473
+msgctxt "OnlySheet"
+msgid "Test from this computer, just now"
+msgstr ""
+
+#: ui/sheets2.slint:484
+msgctxt "OnlySheet"
+msgid ""
+"No backup. If your relays are down or out of reach, your devices do not "
+"connect until they are back."
+msgstr ""
+
+#: ui/sheets2.slint:485
+msgctxt "OnlySheet"
+msgid ""
+"Every device needs the same relays. Set them on the phone too (Diagnostics, "
+"then Servers), or the two will never meet."
+msgstr ""
+
+#: ui/sheets2.slint:486
+msgctxt "OnlySheet"
+msgid ""
+"Tawny’s video relay is switched off with it. Away from home, video then "
+"needs a direct connection or a video relay of your own."
+msgstr ""
+
+#: ui/sheets2.slint:487
+msgctxt "OnlySheet"
+msgid "To undo it, clear the tick in Servers and save."
+msgstr ""
+
+#: ui/sheets2.slint:501 ui/sheets2.slint:505
+msgctxt "OnlySheet"
+msgid "Keep the backup"
+msgstr ""
+
+#: ui/sheets2.slint:536
+msgctxt "WhatsNewSheet"
+msgid "Version {}"
+msgstr ""
+
+#: ui/sheets2.slint:544
+msgctxt "WhatsNewSheet"
+msgid "Tawny just got better"
+msgstr ""
+
+#: ui/sheets2.slint:582
+msgctxt "WhatsNewSheet"
+msgid "Read the full changelog"
+msgstr ""
+
+#: ui/sheets2.slint:588
+msgctxt "WhatsNewSheet"
+msgid ""
+"Thank you for supporting Tawny. It stays free for everyone because of people "
+"like you."
+msgstr ""
+
+#: ui/sheets2.slint:604 ui/sheets2.slint:631
+msgctxt "WhatsNewSheet"
+msgid "Support Tawny"
+msgstr ""
+
+#: ui/sheets2.slint:642
+msgctxt "WhatsNewSheet"
+msgid "Let’s go"
+msgstr ""
+
+#: ui/sheets2.slint:724
+msgctxt "SupportSheet"
+msgid "Support Tawny"
+msgstr ""
+
+#: ui/sheets2.slint:731
+msgctxt "SupportSheet"
+msgid ""
+"Tawny is free, has no ads and doesn’t collect anything about you. If you "
+"enjoy it, you can help keep it that way."
+msgstr ""
+
+#: ui/sheets2.slint:740
+msgctxt "SupportSheet"
+msgid "Buy a coffee"
+msgstr ""
+
+#: ui/sheets2.slint:741
+msgctxt "SupportSheet"
+msgid "Card or PayPal on Ko-fi"
+msgstr ""
+
+#: ui/sheets2.slint:782
+msgctxt "SupportSheet"
+msgid "Tip in Bitcoin"
+msgstr ""
+
+#: ui/sheets2.slint:783
+msgctxt "SupportSheet"
+msgid "Over Lightning with any wallet, or on strike.me"
+msgstr ""
+
+#: ui/sheets2.slint:803
+msgctxt "SupportSheet"
+msgid "Thank you for being here."
+msgstr ""
+
+#: ui/sheets2.slint:808
+msgctxt "SupportSheet"
+msgid "Not now"
+msgstr ""
+
+#: ui/sheets.slint:201
+msgctxt "RowMenu"
+msgid "Channel"
+msgstr ""
+
+#: ui/sheets.slint:207
+msgctxt "RowMenu"
+msgid "Rename"
+msgstr ""
+
+#: ui/sheets.slint:212
+msgctxt "RowMenu"
+msgid "Switch role"
+msgstr ""
+
+#: ui/sheets.slint:217
+msgctxt "RowMenu"
+msgid "Delete channel"
+msgstr ""
+
+#: ui/sheets.slint:224
+msgctxt "RowMenu"
+msgid "Cancel"
+msgstr ""
+
+#: ui/sheets.slint:232
+msgctxt "DeleteConfirm"
+msgid "Delete channel?"
+msgstr ""
+
+#: ui/sheets.slint:234
+msgctxt "DeleteConfirm"
+msgid ""
+"Devices paired to it will stop connecting. You can pair them again later."
+msgstr ""
+
+#: ui/sheets.slint:240
+msgctxt "DeleteConfirm"
+msgid "Cancel"
+msgstr ""
+
+#: ui/sheets.slint:246
+msgctxt "DeleteConfirm"
+msgid "Delete"
+msgstr ""
+
+#: ui/sheets.slint:257
+msgctxt "Editor"
+msgid "Rename channel"
+msgstr ""
+
+#: ui/sheets.slint:257
+msgctxt "Editor"
+msgid "New channel"
+msgstr ""
+
+#: ui/sheets.slint:259
+msgctxt "Editor"
+msgid "Name"
+msgstr ""
+
+#: ui/sheets.slint:260
+msgctxt "Editor"
+msgid "Living room"
+msgstr ""
+
+#: ui/sheets.slint:265
+msgctxt "Editor"
+msgid "The key stays the same, so paired devices keep working."
+msgstr ""
+
+#: ui/sheets.slint:266
+msgctxt "Editor"
+msgid ""
+"A fresh key is generated for this channel. Only devices you pair can join it."
+msgstr ""
+
+#: ui/sheets.slint:272
+msgctxt "Editor"
+msgid "Cancel"
+msgstr ""
+
+#: ui/sheets.slint:277
+msgctxt "Editor"
+msgid "Save"
+msgstr ""
+
+#: ui/tip.slint:161
+msgctxt "TipPick"
+msgid "Back"
+msgstr ""
+
+#: ui/tip.slint:196
+msgctxt "TipPick"
+msgid "Tip in Bitcoin"
+msgstr ""
+
+#: ui/tip.slint:203
+msgctxt "TipPick"
+msgid "Over Lightning, with any wallet. Tawny stays free either way."
+msgstr ""
+
+#: ui/tip.slint:214 ui/tip.slint:266
+msgctxt "TipPick"
+msgid "Amount"
+msgstr ""
+
+#: ui/tip.slint:224
+msgctxt "TipPick"
+msgid "Other"
+msgstr ""
+
+#: ui/tip.slint:225
+msgctxt "TipPick"
+msgid "any amount"
+msgstr ""
+
+#: ui/tip.slint:275
+msgctxt "TipPick"
+msgid "Create code"
+msgstr ""
+
+#: ui/tip.slint:292
+msgctxt "TipPick"
+msgid "QR code of the Lightning invoice"
+msgstr ""
+
+#: ui/tip.slint:344
+msgctxt "TipPick"
+msgid "Creating your code…"
+msgstr ""
+
+#: ui/tip.slint:345
+msgctxt "TipPick"
+msgid "Type an amount, then “Create code”."
+msgstr ""
+
+#: ui/tip.slint:346
+msgctxt "TipPick"
+msgid "You’re offline. Connect, then try again."
+msgstr ""
+
+#: ui/tip.slint:347
+msgctxt "TipPick"
+msgid "Couldn’t reach the tip service."
+msgstr ""
+
+#: ui/tip.slint:355
+msgctxt "TipPick"
+msgid "Try again"
+msgstr ""
+
+#: ui/tip.slint:380
+msgctxt "TipPick"
+msgid "Scan with any Bitcoin wallet on your phone"
+msgstr ""
+
+#: ui/tip.slint:400
+msgctxt "TipPick"
+msgid "Waiting for payment…"
+msgstr ""
+
+#: ui/tip.slint:411
+msgctxt "TipPick"
+msgid "No wallet? Pay on strike.me"
+msgstr ""
+
+#: ui/tip.slint:430
+msgctxt "TipPick"
+msgid "Copied"
+msgstr ""
+
+#: ui/tip.slint:430
+msgctxt "TipPick"
+msgid "Couldn’t copy"
+msgstr ""
+
+#: ui/tip.slint:430
+msgctxt "TipPick"
+msgid "Copy invoice"
+msgstr ""
+
+#: ui/tip.slint:437
+msgctxt "TipPick"
+msgid "Not now"
+msgstr ""
+
+#: ui/tip.slint:525
+msgctxt "TipThanks"
+msgid "Thank you!"
+msgstr ""
+
+#: ui/tip.slint:553
+msgctxt "TipThanks"
+msgid "You’re making Tawny better for everyone."
+msgstr ""
+
+#: ui/tip.slint:563
+msgctxt "TipThanks"
+msgid "Done"
+msgstr ""
+
+#: ui/welcome.slint:59
+msgctxt "Welcome"
+msgid "Pet Monitor"
+msgstr ""
+
+#: ui/welcome.slint:72
+msgctxt "Welcome"
+msgid ""
+"Keep an eye on your pet from anywhere in the house. Two phones on your Wi-Fi "
+"— no accounts, nothing to set up."
+msgstr ""
+
+#: ui/welcome.slint:84
+msgctxt "Welcome"
+msgid "Get started"
+msgstr ""
+
+#: ui/welcome.slint:85
+msgctxt "Welcome"
+msgid "I’ve set this up before"
+msgstr ""

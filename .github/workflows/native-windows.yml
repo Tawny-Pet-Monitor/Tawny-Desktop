@@ -1,0 +1,102 @@
+# The native (Slint) Desktop on Windows: build it, lint it, test it, and keep
+# the unsigned .exe as a workflow artifact for trying out. Nothing is
+# published. libwebrtc's Windows build needs MSVC, which is why this runs on
+# GitHub's Windows runner rather than on the Linux build machine.
+
+name: Native Windows
+
+on:
+  push:
+    branches: [devops/native]
+    paths:
+      - 'native/**'
+      - '.github/workflows/native-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: native/desktop
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 2026-10-16
+        with:
+          toolchain: stable
+          components: clippy
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/desktop
+
+      # webrtc-sys and the recorder's C layer build with MSVC.
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Lint
+        run: cargo clippy --release --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --release --locked
+
+      # The runner image no longer carries NSIS; a pinned one from Chocolatey.
+      - name: NSIS
+        shell: pwsh
+        run: choco install nsis --version=3.11.0 -y --no-progress
+
+      - name: Installer
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
+          $nsis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
+          if (-not $nsis) { $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe" }
+          & $nsis /V2 "/DVERSION=$v" "/DEXE=$pwd\target\release\tawny.exe" "/DOUT=$pwd\target\Tawny-$v-x64-setup.exe" packaging\windows\tawny.nsi
+          if ($LASTEXITCODE) { exit 1 }
+
+      # The installer on a real Windows: install silently, check what it set
+      # up, have the installed program draw every screen (its screenshot mode
+      # needs no display), then uninstall and check it all went.
+      - name: Try the installer
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem target\Tawny-*-setup.exe)[0].FullName
+          Start-Process $setup -ArgumentList '/S' -Wait
+          $exe = "$env:LOCALAPPDATA\Tawny\tawny.exe"
+          if (-not (Test-Path $exe)) { throw "tawny.exe was not installed" }
+          $cmd = (Get-ItemProperty 'HKCU:\Software\Classes\tawny\shell\open\command').'(default)'
+          if ($cmd -ne "`"$exe`" `"%1`"") { throw "tawny:// handler is '$cmd'" }
+          $app = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Tawny'
+          "installed: $($app.DisplayName) $($app.DisplayVersion)"
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Tawny\Tawny.lnk")) { throw "no Start menu entry" }
+          Start-Process $exe -ArgumentList '--shot', "$pwd\target\shots-windows" -Wait
+          $n = (Get-ChildItem target\shots-windows\*.png).Count
+          "the installed program drew $n screens"
+          if ($n -lt 60) { throw "only $n screens drawn" }
+          Start-Process "$env:LOCALAPPDATA\Tawny\uninstall.exe" -ArgumentList '/S' -Wait
+          # The uninstaller hands over to a copy of itself and returns early.
+          for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep 1 }
+          if (Test-Path $exe) { throw "still installed after uninstalling" }
+          if (Test-Path 'HKCU:\Software\Classes\tawny') { throw "tawny:// handler left behind" }
+          if (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Tawny') { throw "Apps entry left behind" }
+          "uninstalled cleanly"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tawny-windows-x64
+          path: |
+            native/desktop/target/Tawny-*-x64-setup.exe
+            native/desktop/target/release/tawny.exe
+          retention-days: 14
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: shots-windows
+          path: native/desktop/target/shots-windows/
+          retention-days: 14

@@ -1,0 +1,196 @@
+// The web page's shared controls (.wide.primary, .linkbtn), drawn natively.
+
+import { Theme } from "theme.slint";
+
+// The 52 px pill in thumb reach (".screen.app .wide.primary").
+export component PrimaryButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    // A step that can't be undone (".wide.primary.danger"): the deep red.
+    in property <bool> danger;
+    property <color> fill: danger ? Theme.live-ink : Theme.berry;
+    callback clicked();
+
+    min-height: 52px;
+    border-radius: Theme.r-ctl;
+    background: !enabled ? Theme.raise : touch.pressed ? fill.darker(12%) : touch.has-hover ? fill.brighter(6%) : fill;
+    // A soft lift under the accent; it settles when pressed.
+    drop-shadow-color: enabled ? fill.transparentize(touch.pressed ? 0.85 : 0.72) : transparent;
+    drop-shadow-blur: touch.pressed ? 4px : 14px;
+    drop-shadow-offset-y: touch.pressed ? 1px : 5px;
+    animate background, drop-shadow-blur, drop-shadow-offset-y { duration: Theme.quick; easing: ease-out; }
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { if (enabled) { clicked(); } }
+    forward-focus: focus;
+
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (enabled && (e.text == " " || e.text == "\n")) { root.clicked(); return accept; }
+            reject
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    label := Text {
+        text: root.text;
+        color: root.enabled ? Theme.on-accent : Theme.dim;
+        font-family: Theme.strong-font;
+        font-size: 15px;
+        letter-spacing: 0.3px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    // Keyboard focus: the web page's 2 px berry outline, 2 px off.
+    Rectangle {
+        x: -4px; y: -4px; width: parent.width + 8px; height: parent.height + 8px;
+        border-radius: Theme.r-ctl + 4px;
+        border-width: focus.has-focus ? 2px : 0;
+        border-color: Theme.berry;
+    }
+}
+
+// A quiet text button (".linkbtn"): 48 px tall, dim ink, berry on hover.
+export component LinkButton inherits Rectangle {
+    in property <string> text;
+    // In the accent at rest (a link out, ".wn-changelog").
+    in property <bool> accent;
+    callback clicked();
+
+    min-height: 48px;
+    border-radius: Theme.r-ctl;
+    background: touch.pressed ? Theme.berry.transparentize(0.9) : transparent;
+    animate background { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { clicked(); }
+    forward-focus: focus;
+
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == "\n") { root.clicked(); return accept; }
+            reject
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text: root.text;
+        color: touch.has-hover || touch.pressed || root.accent ? Theme.berry : Theme.dim;
+        animate color { duration: Theme.quick; }
+        font-family: Theme.text-font;
+        font-size: 15px;
+        letter-spacing: 0.3px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        border-radius: Theme.r-ctl;
+        border-width: focus.has-focus ? 2px : 0;
+        border-color: Theme.berry;
+    }
+}
+
+// A quiet full-width outline key (".wide.ghost"); `solid` gives it the
+// raised fill of a plain ".wide".
+export component GhostButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> solid: false;
+    callback clicked();
+
+    min-height: 52px;
+    border-radius: Theme.r-ctl;
+    border-width: 1px;
+    border-color: touch.has-hover || focus.has-focus ? Theme.berry : Theme.line;
+    background: touch.pressed ? Theme.berry.transparentize(0.9) : solid ? Theme.raise : transparent;
+    animate background, border-color { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { clicked(); }
+    forward-focus: focus;
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == "\n") { root.clicked(); return accept; }
+            reject
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text: root.text;
+        font-family: Theme.strong-font;
+        font-size: 15px;
+        letter-spacing: 0.3px;
+        color: touch.has-hover ? Theme.berry : Theme.fg;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// The screen foot (".screen-foot"): the main way on, and a quiet second one,
+// in a 480 px column pinned at the bottom.
+export component Foot inherits Rectangle {
+    in property <string> primary;
+    in property <string> secondary;
+    in property <bool> enabled: true;
+    // Content runs on under the foot: it lifts onto the panel, with a hairline.
+    in property <bool> lifted;
+    // The second way is an outlined key (".wide.ghost"), not a quiet link.
+    in property <bool> ghost;
+    callback primary-clicked();
+    callback secondary-clicked();
+
+    background: lifted ? Theme.panel : transparent;
+    animate background { duration: Theme.quick; }
+    Rectangle { y: 0; height: 1px; background: root.lifted ? Theme.line : transparent; }
+    HorizontalLayout {
+    alignment: center;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    VerticalLayout {
+        preferred-width: 480px;
+        max-width: 480px;
+        spacing: 6px;
+        PrimaryButton {
+            text: root.primary;
+            enabled: root.enabled;
+            clicked => { root.primary-clicked(); }
+        }
+        if root.secondary != "" && !root.ghost: LinkButton {
+            text: root.secondary;
+            clicked => { root.secondary-clicked(); }
+        }
+        if root.secondary != "" && root.ghost: GhostButton {
+            text: root.secondary;
+            clicked => { root.secondary-clicked(); }
+        }
+    }
+    }
+}
+
+// The three pumping bars of ".spinner": something is under way.
+export component Pump inherits HorizontalLayout {
+    in property <length> bar-width: 4px;
+    in property <length> bar-height: 16px;
+    spacing: 6px;
+    alignment: center;
+    for i in 3: Rectangle {
+        property <float> p: Theme.still ? 1 : 0.5 - 0.5 * cos(360deg * mod(animation-tick() / 1100ms - i * 0.16 / 1.1, 1));
+        width: root.bar-width;
+        height: root.bar-height;
+        Rectangle {
+            y: parent.height * (1 - (0.35 + 0.65 * p)) / 2;
+            height: parent.height * (0.35 + 0.65 * p);
+            background: Theme.berry-d.mix(Theme.berry, 1 - p);
+        }
+    }
+}

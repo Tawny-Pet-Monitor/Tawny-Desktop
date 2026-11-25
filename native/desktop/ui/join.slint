@@ -1,0 +1,120 @@
+// "Pairing code accepted" (web/index.html #join): a scanned or opened pairing
+// link, one tap from joining that Monitor as a Viewer.
+
+import { Theme } from "theme.slint";
+import { Foot } from "widgets.slint";
+
+export component Join inherits Rectangle {
+    // The Monitor's name from the link.
+    in property <string> name: @tr("the monitor");
+    // Something about the link to say before joining (".warn"), or nothing.
+    in property <string> note;
+    callback go();
+    callback cancel();
+
+    VerticalLayout {
+        Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: center;
+                padding-top: 20px;
+                padding-bottom: 28px;
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 22px;
+                // The app's mark, set in a raised seal.
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 76px;
+                        height: 76px;
+                        border-radius: 20px;
+                        background: Theme.panel;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                        drop-shadow-color: #0c0d1230;
+                        drop-shadow-blur: 18px;
+                        drop-shadow-offset-y: 8px;
+                        Rectangle {
+                            width: 60px;
+                            height: 60px;
+                            border-radius: 15px;
+                            clip: true;
+                            Image {
+                                width: 100%;
+                                height: 100%;
+                                source: @image-url("icon.svg");
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 14px;
+                    Text {
+                        text: @tr("Pairing code accepted");
+                        font-family: Theme.strong-font;
+                        font-size: 27px;
+                        color: Theme.fg;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                        accessible-role: text;
+                    }
+                    // "You're about to join <name> as a Viewer.", the name in
+                    // the accent and set apart so a long one elides, not wraps.
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        Text {
+                            text: @tr("You’re about to join");
+                            font-size: 16px;
+                            color: Theme.dim;
+                        }
+                        Text {
+                            max-width: 240px;
+                            text: root.name;
+                            font-family: Theme.strong-font;
+                            font-size: 16px;
+                            color: Theme.berry;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: @tr("as a Viewer.");
+                            font-size: 16px;
+                            color: Theme.dim;
+                        }
+                    }
+                }
+                if root.note != "": HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        max-width: 448px;
+                        border-radius: Theme.r-chip;
+                        border-width: 1px;
+                        border-color: Theme.live.mix(Theme.line, 0.35);
+                        background: Theme.live.mix(Theme.panel, 0.12);
+                        VerticalLayout {
+                            padding-left: 13px;
+                            padding-right: 13px;
+                            padding-top: 11px;
+                            padding-bottom: 11px;
+                            Text {
+                                text: root.note;
+                                font-size: 12.5px;
+                                color: Theme.fg;
+                                wrap: word-wrap;
+                                accessible-role: text;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Foot {
+            ghost: true;
+            primary: @tr("Join now");
+            secondary: @tr("Not now");
+            primary-clicked => { root.go(); }
+            secondary-clicked => { root.cancel(); }
+        }
+    }
+}

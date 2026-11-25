@@ -1,0 +1,1379 @@
+// The call (web/index.html #live): the picture, the status rail over it, the
+// overlays that come and go, and the row of keys. One screen for both jobs;
+// `Live.role` picks the keys.
+
+import { Theme } from "theme.slint";
+
+// The call's state and what its keys ask for. Rust fills it from the engine.
+export global Live {
+    // "station" (this device is the Monitor) or "viewer".
+    in-out property <string> role: "viewer";
+    // The picture: the far camera on a Viewer, this camera on the Monitor.
+    in-out property <image> video;
+    in-out property <bool> has-video;
+    // A Viewer's own camera, in the corner while it is on (mirrored).
+    in-out property <image> pip;
+    in-out property <bool> has-pip;
+    // Still connecting: the carrier lantern instead of a picture.
+    in-out property <bool> connecting: true;
+
+    // The status chip: "idle", "on", "live" or "warn", and its word.
+    in-out property <string> dot: "idle";
+    in-out property <string> status: @tr("Connecting");
+    // The far end's sound, 0..1.
+    in-out property <float> level;
+    // Phones watching (Monitor) or in the call (Viewer); 0 hides the count.
+    in-out property <int> peers;
+    in-out property <bool> peers-busy;
+    // The one phone's own short name, when exactly one is watching.
+    in-out property <string> peer-label;
+    // Monitor: viewers are announced with a sound.
+    in-out property <bool> announce;
+    // Viewer: the channel's name, and the Monitor's battery (-1: unknown).
+    in-out property <string> channel;
+    in-out property <int> battery: -1;
+    in-out property <bool> charging;
+
+    // Monitor: a Viewer is talking.
+    in-out property <bool> talkflag;
+    // The one message over the picture (a paused Monitor, a call that
+    // never came up); empty hides it.
+    in-out property <string> note-title;
+    in-out property <string> note-body;
+    // The first-call safety code; empty hides the card.
+    in-out property <string> sas-code;
+    in-out property <string> sas-note: @tr("Check this code matches the one on the other phone:");
+    in-out property <bool> sas-warn;
+
+    // Latched keys.
+    in-out property <bool> chimes-open;
+    in-out property <bool> torch-on;
+    in-out property <bool> torch-unavailable;
+    in-out property <bool> listen-muted;
+    in-out property <bool> camera-on;
+    in-out property <bool> recording;
+    // What is left of the clip ("0:14"), shown on the key while it records.
+    in-out property <string> record-left;
+    in-out property <bool> mic-muted;
+    // Hold to talk is held.
+    in-out property <bool> talking;
+    // Monitor: the screen is dimmed to black (a big meter, a way back).
+    in-out property <bool> dimmed;
+    // Viewer: the Monitor's lenses when it has more than one, and which is on.
+    in-out property <[string]> lenses;
+    in-out property <int> lens;
+    // A zoom level shown while it changes ("2.0×"); empty hides it.
+    in-out property <string> zoom-text;
+    // Viewer: its own zoom of the picture (zoom.rs): the scale, and where
+    // the scaled picture sits on the stage. The wheel zooms at the pointer,
+    // a drag moves the zoomed picture.
+    in-out property <float> zoom: 1;
+    in-out property <length> zoom-x;
+    in-out property <length> zoom-y;
+    // The stage's size, for zoom.rs (kept up to date by the page).
+    in-out property <length> stage-w;
+    in-out property <length> stage-h;
+    callback zoom-wheel(length, length, length);
+    callback zoom-press();
+    callback zoom-drag(length, length);
+
+    callback chime(string);
+    callback torch();
+    callback listen-mute();
+    callback camera();
+    callback snapshot();
+    callback record();
+    callback leave();
+    callback flip();
+    callback mic-mute();
+    callback dim();
+    callback stop();
+    callback talk(bool);
+    callback sas-ok();
+    callback sas-no();
+    callback peers-clicked();
+    callback wake();
+    callback pick-lens(int);
+
+    // The first-call walkthrough: which step is up (-1: none), and when it
+    // ends (seen or skipped) so it is not shown again for this role.
+    in-out property <int> coach-step: -1;
+    callback coach-done();
+}
+
+// The walkthrough's keys, in order, for each job.
+global CoachSteps {
+    pure public function keys(role: string) -> [string] {
+        return role == "station" ? ["who", "dim", "flip", "stop"] : ["talk", "chime", "who", "torch", "snap", "leave"];
+    }
+    // The key the walkthrough is on now, or "".
+    pure public function current() -> string {
+        return Live.coach-step < 0 ? "" : CoachSteps.keys(Live.role)[Live.coach-step];
+    }
+}
+
+// Where the walkthrough's current key is: the key itself reports it, since
+// keys come and go with the role.
+global Spot {
+    in-out property <length> x;
+    in-out property <length> y;
+    in-out property <length> width;
+    in-out property <length> height;
+}
+
+export global LiveGlyph {
+    out property <string> chime: "M6 16V11a6 6 0 0 1 12 0v5l2 3H4l2-3Z M10 20a2 2 0 0 0 4 0";
+    out property <string> torch: "M8 5.6h8l-1.3 3.8H9.3L8 5.6Z M9.3 9.4h5.4v10.2a1.8 1.8 0 0 1-1.8 1.8h-1.8a1.8 1.8 0 0 1-1.8-1.8V9.4Z M9.7 13.4h4.6";
+    out property <string> beam: "M12 3.4V1.6 M6.9 4.5 5.7 3 M17.1 4.5l1.2-1.5";
+    out property <string> speaker: "M4 9v6h4l5 4V5L8 9H4Z";
+    out property <string> speaker-slash: "M3 3L21 21";
+    out property <string> camera: "M5 6h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z M16 10.5l5-2.5v8l-5-2.5";
+    out property <string> snapshot: "M4 8h3l1.5-2h7L18 8h2a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z M8.5 13a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0 -7 0Z";
+    out property <string> ring: "M2.5 12a9.5 9.5 0 1 0 19 0a9.5 9.5 0 1 0 -19 0Z";
+    out property <string> rec-dot: "M5.5 12a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0 -13 0Z";
+    // The handset, turned 135° to read as "hang up".
+    out property <string> hang-up: "M 14.121 14.121 c 1.697 -1.697 3.062 -3.585 4.108 -5.593 0.438 -0.834 0.311 -1.853 -0.283 -2.574 l -0.969 -1.181 a 1.5 1.5 135 0 0 -1.831 -0.389 l -2.383 1.195 a 1.5 1.5 135 0 0 -0.651 2.036 l 0.778 1.485 c -0.976 1.824 -2.701 3.55 -4.525 4.525 l -1.485 -0.778 a 1.5 1.5 135 0 0 -2.036 0.651 l -1.195 2.383 a 1.5 1.5 135 0 0 0.389 1.831 l 1.181 0.969 c 0.721 0.594 1.739 0.721 2.574 0.283 A 23.2 23.2 135 0 0 14.121 14.121 Z";
+    out property <string> flip: "M5 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z M9 13.5a3 3 0 1 0 6 0a3 3 0 1 0 -6 0Z M9 4h6 M15.5 12.5a3.5 3.5 0 0 0-6-2 M8.5 14.5a3.5 3.5 0 0 0 6 2";
+    out property <string> mic: "M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3Z M6 11a6 6 0 0 0 12 0 M12 17v4 M9 21h6";
+    out property <string> mic-slash: "M4 3.5L20 20.5";
+    out property <string> moon: "M20 13A8 8 0 1 1 11 4a6 6 0 0 0 9 9Z";
+    out property <string> phone: "M8.6 2.5h6.8a2.6 2.6 0 0 1 2.6 2.6v13.8a2.6 2.6 0 0 1-2.6 2.6H8.6a2.6 2.6 0 0 1-2.6-2.6V5.1a2.6 2.6 0 0 1 2.6-2.6Z M10.5 18.4h3";
+    out property <string> bell: "M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 1.8H4.4Z M10 20.6a2.2 2.2 0 0 0 4 0";
+    out property <string> bolt: "M13 2 5 13.5h5.5L9 22l9-12h-6l1-8Z";
+}
+
+// A 24×24 glyph, stroked like the page's icons.
+component Glyph24 inherits Path {
+    in property <length> size: 24px;
+    in property <color> ink;
+    width: size;
+    height: size;
+    viewbox-width: 24;
+    viewbox-height: 24;
+    stroke: ink;
+    stroke-width: 2px * size / 24px;
+    stroke-line-cap: round;
+    stroke-line-join: round;
+    fill: transparent;
+}
+
+// One key in the row (".ctl"): a plate with the glyph, a word under it.
+component Ctl inherits Rectangle {
+    in property <string> label;
+    in property <string> glyph;
+    // Drawn solid instead of stroked (the hang-up handset).
+    in property <bool> solid;
+    // Drawn on top only while latched: the slash of a mute, a light's beam.
+    in property <string> latched-glyph;
+    in property <bool> latched-slash;
+    // Drawn solid on top always (the record key's dot).
+    in property <string> dot-glyph;
+    in property <bool> on;
+    in property <bool> danger;
+    in property <bool> unavailable;
+    in property <color> acc: danger ? Theme.live : Theme.berry;
+    in property <color> acc-d: danger ? Theme.live : Theme.berry-d;
+    // A clip is being recorded: the halo pulses.
+    in property <bool> pulse;
+    // Its name in the walkthrough.
+    in property <string> coach;
+    callback clicked();
+
+    property <bool> spotted: coach != "" && CoachSteps.current() == coach;
+    function report() {
+        Spot.x = plate.absolute-position.x;
+        Spot.y = plate.absolute-position.y;
+        Spot.width = plate.width;
+        Spot.height = plate.height;
+    }
+    changed spotted => { if (self.spotted) { self.report(); } }
+    changed width => { if (self.spotted) { self.report(); } }
+    init => { if (self.spotted) { self.report(); } }
+
+    property <bool> hot: touch.pressed && !unavailable;
+    property <color> ink: hot || on ? acc-d : danger ? Theme.live : touch.has-hover && !unavailable ? Theme.fg : Theme.dim;
+    // The word stays quiet on a danger key; only its glyph wears the red.
+    property <color> word: hot || on ? acc-d : touch.has-hover && !unavailable ? (danger ? Theme.live : Theme.fg) : Theme.dim;
+
+    opacity: unavailable ? 0.35 : 1;
+    accessible-role: button;
+    accessible-label: label;
+    accessible-checked: on;
+    accessible-action-default => { clicked(); }
+    forward-focus: focus;
+
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == "\n") { root.clicked(); return accept; }
+            reject
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    VerticalLayout {
+        padding-top: 3px;
+        padding-bottom: 4px;
+        spacing: 5px;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                preferred-width: 72px;
+                max-width: 72px;
+                min-width: 40px;
+                height: 40px;
+                // The accent blooms out from behind the plate on a press.
+                bloom := Rectangle {
+                    property <float> grow: 1.32;
+                    x: -parent.width * (self.grow - 1) / 2;
+                    y: -parent.height * (self.grow - 1) / 2;
+                    width: parent.width * self.grow;
+                    height: parent.height * self.grow;
+                    border-radius: Theme.r-ctl + 3px;
+                    background: root.acc;
+                    opacity: 0;
+                    states [
+                        pressed when root.hot && !Theme.still: {
+                            opacity: 0.5;
+                            grow: 0.82;
+                            out {
+                                animate opacity, grow { duration: 440ms; easing: ease-out; }
+                            }
+                        }
+                    ]
+                }
+                // Recording: a slow halo, over and over.
+                if root.pulse && !Theme.still: Rectangle {
+                    property <float> u: mod(animation-tick() / 1.5s, 1);
+                    property <float> p: min(self.u / 0.7, 1);
+                    property <float> grow: 0.94 + 0.34 * self.p;
+                    x: -parent.width * (self.grow - 1) / 2;
+                    y: -parent.height * (self.grow - 1) / 2;
+                    width: parent.width * self.grow;
+                    height: parent.height * self.grow;
+                    border-radius: Theme.r-ctl + 3px;
+                    background: Theme.live;
+                    opacity: 0.55 * (1 - self.p);
+                }
+                plate := Rectangle {
+                    property <length> inset: root.hot && !Theme.still ? 2px : 0;
+                    animate inset { duration: 180ms; easing: cubic-bezier(0.2, 0.8, 0.3, 1); }
+                    x: self.inset * 1.8;
+                    y: self.inset;
+                    width: parent.width - self.inset * 3.6;
+                    height: parent.height - self.inset * 2;
+                    border-radius: Theme.r-ctl;
+                    border-width: 1px;
+                    background: root.hot ? root.acc.mix(Theme.panel, 0.20)
+                        : root.on ? root.acc.mix(Theme.panel, 0.18)
+                        : root.danger ? Theme.live.mix(Theme.panel, 0.11)
+                        : touch.has-hover && !root.unavailable ? root.acc.mix(Theme.raise, 0.09)
+                        : Theme.raise;
+                    border-color: root.hot ? root.acc
+                        : root.on ? root.acc.mix(Theme.line, 0.6)
+                        : root.danger ? Theme.live.mix(Theme.line, 0.34)
+                        : Theme.line;
+                    animate background, border-color { duration: Theme.quick; }
+                    if !root.solid: Glyph24 {
+                        size: 28px;
+                        commands: root.glyph;
+                        ink: root.ink;
+                    }
+                    if root.solid: Path {
+                        width: 28px;
+                        height: 28px;
+                        viewbox-width: 24;
+                        viewbox-height: 24;
+                        commands: root.glyph;
+                        fill: root.ink;
+                    }
+                    if root.dot-glyph != "": Path {
+                        width: 28px;
+                        height: 28px;
+                        viewbox-width: 24;
+                        viewbox-height: 24;
+                        commands: root.dot-glyph;
+                        fill: root.ink;
+                    }
+                    if root.on && root.latched-glyph != "": Glyph24 {
+                        size: 28px;
+                        commands: root.latched-glyph;
+                        ink: root.latched-slash ? Theme.live : root.ink;
+                    }
+                }
+                Rectangle {
+                    x: -3px; y: -3px;
+                    width: parent.width + 6px; height: parent.height + 6px;
+                    border-radius: Theme.r-ctl + 3px;
+                    border-width: focus.has-focus ? 2px : 0;
+                    border-color: Theme.berry;
+                }
+            }
+        }
+        Text {
+            text: root.label.to-uppercase();
+            font-size: 13px;
+            letter-spacing: 0.5px;
+            color: root.word;
+            animate color { duration: Theme.quick; }
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+// A small tag on the rail (#peercount, #peerlabel, #battchip, #channel).
+// Tags sit on the picture, and a bright frame must not wash them out (the
+// web page blurs what is behind them; here they get the warm dark glass),
+// with each tag's own colour as a wash on top.
+component Tag inherits Rectangle {
+    in property <color> tint: Theme.glass-fg;
+    in property <color> edge: Theme.glass-line;
+    in property <color> ground: #ffffff0a;
+    border-radius: Theme.r-chip - 2px;
+    background: Theme.glass;
+    Rectangle {
+        border-radius: root.border-radius;
+        border-width: 1px;
+        border-color: root.edge;
+        background: root.ground;
+    }
+}
+
+// The sound meter (".meter"): 14 bars, the last two the peak.
+component Meter inherits HorizontalLayout {
+    in property <float> level;
+    in property <length> bar: 3px;
+    in property <length> tall: 14px;
+    in property <length> gap: 3px;
+    spacing: gap;
+    alignment: start;
+    property <int> lit: round(level * 14);
+    for i in 14: Rectangle {
+        width: root.bar;
+        height: root.tall;
+        Rectangle {
+            property <bool> on: i < root.lit;
+            y: parent.height - self.height;
+            height: parent.height * (self.on ? 1 : 0.42);
+            border-radius: root.bar / 2;
+            background: !self.on ? #f7f1e83d : i >= 12 ? Theme.live : Theme.berry-lit;
+            animate height, background { duration: Theme.still ? 0ms : 60ms; }
+        }
+    }
+}
+
+// Connecting: an idle carrier meter in a warm lantern glow.
+component Lantern inherits Rectangle {
+    property <duration> t: Theme.still ? 0ms : animation-tick();
+    // lantern: 2.8 s, scale .86 ↔ 1.1, opacity .5 ↔ .95
+    property <float> l: 0.5 - 0.5 * cos(360deg * mod(t / 2.8s, 1));
+    Rectangle {
+        width: 176px * (0.86 + 0.24 * root.l);
+        height: self.width;
+        border-radius: self.width / 2;
+        background: @radial-gradient(circle, Theme.berry.transparentize(0.7) 0%, Theme.berry.transparentize(1) 100%);
+        opacity: 0.5 + 0.45 * root.l;
+    }
+    HorizontalLayout {
+        alignment: center;
+        spacing: 7px;
+        for i in 5: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                // carrier: 1.4 s, .14 s apart, scaleY .26 ↔ 1
+                property <float> c: Theme.still ? 0.6 : 0.5 - 0.5 * cos(360deg * mod((root.t - i * 140ms) / 1.4s + 9, 1));
+                width: 6px;
+                height: 42px * (0.26 + 0.74 * self.c);
+                border-radius: 3px;
+                opacity: 0.45 + 0.55 * self.c;
+                background: @linear-gradient(180deg, Theme.berry 0%, Theme.berry-d 100%);
+            }
+        }
+    }
+}
+
+// The rail over the top of the picture: status, sound, who is there.
+component Rail inherits Rectangle {
+    height: 64px;
+    background: @linear-gradient(180deg, #0a08056b 0%, #0a080500 74%);
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 9px;
+        alignment: stretch;
+        spacing: 7px;
+        VerticalLayout {
+            alignment: start;
+            horizontal-stretch: 0;
+            // The status: a dot and a short word on glass.
+            Rectangle {
+                height: 27px;
+                border-radius: Theme.r-chip;
+                background: Theme.glass;
+                border-width: 1px;
+                border-color: Theme.glass-line;
+                HorizontalLayout {
+                    padding-left: 9px;
+                    padding-right: 9px;
+                    spacing: 6px;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            property <color> c: Live.dot == "live" ? Theme.live : Live.dot == "on" ? Theme.berry : Live.dot == "warn" ? Theme.alert : Theme.dim;
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: self.c;
+                            drop-shadow-color: Live.dot == "idle" ? transparent : self.c.transparentize(0.3);
+                            drop-shadow-blur: 10px;
+                            // live breathes; paused holds steady
+                            opacity: Live.dot == "live" && !Theme.still ? 0.675 + 0.325 * cos(360deg * mod(animation-tick() / 2s, 1)) : 1;
+                        }
+                    }
+                    Text {
+                        text: Live.status.to-uppercase();
+                        font-family: Theme.strong-font;
+                        font-size: 10px;
+                        letter-spacing: 1.2px;
+                        color: Theme.glass-fg;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        accessible-role: text;
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: start;
+            horizontal-stretch: 0;
+            padding-top: 7px;
+            Meter {
+                level: Live.level;
+                accessible-role: image;
+                accessible-label: @tr("Sound level at the far end");
+            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: end;
+            horizontal-stretch: 0;
+            if Live.role == "station" && Live.announce: VerticalLayout {
+                alignment: start;
+                padding-top: 2px;
+                Tag {
+                    height: 23px;
+                    accessible-role: text;
+                    accessible-label: @tr("Viewers are announced with a sound");
+                    HorizontalLayout {
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        spacing: 4px;
+                        VerticalLayout {
+                            alignment: center;
+                            Glyph24 { size: 11px; commands: LiveGlyph.bell; ink: Theme.glass-fg; }
+                        }
+                        Text {
+                            text: @tr("Announced").to-uppercase();
+                            font-family: Theme.strong-font;
+                            font-size: 10.5px;
+                            letter-spacing: 0.4px;
+                            color: Theme.glass-fg;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+            if Live.peers > 0: VerticalLayout {
+                alignment: start;
+                padding-top: 2px;
+                pc := Tag {
+                    property <bool> spotted: CoachSteps.current() == "who";
+                    function report() {
+                        Spot.x = self.absolute-position.x;
+                        Spot.y = self.absolute-position.y;
+                        Spot.width = self.width;
+                        Spot.height = self.height;
+                    }
+                    changed spotted => { if (self.spotted) { self.report(); } }
+                    init => { if (self.spotted) { self.report(); } }
+                    property <color> accent: Live.peers-busy ? Theme.live : Theme.berry;
+                    height: 23px;
+                    tint: Live.peers-busy ? Theme.live.mix(#ffffff, 0.55) : Theme.berry-lit.mix(#ffffff, 0.55);
+                    edge: self.accent.transparentize(0.48);
+                    ground: self.accent.transparentize(0.84);
+                    accessible-role: button;
+                    accessible-label: @tr("Phones watching") + ": " + Live.peers;
+                    accessible-action-default => { Live.peers-clicked(); }
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Live.peers-clicked(); }
+                    }
+                    HorizontalLayout {
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        spacing: 4px;
+                        VerticalLayout {
+                            alignment: center;
+                            Glyph24 { size: 11px; commands: LiveGlyph.phone; ink: pc.tint; }
+                        }
+                        Text {
+                            text: Live.peers;
+                            font-family: Theme.strong-font;
+                            font-size: 10.5px;
+                            color: pc.tint;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+            if Live.peer-label != "": VerticalLayout {
+                alignment: start;
+                padding-top: 2px;
+                Tag {
+                    height: 23px;
+                    max-width: 220px;
+                    HorizontalLayout {
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        Text {
+                            text: Live.peer-label;
+                            font-family: Theme.strong-font;
+                            font-size: 10px;
+                            color: Theme.glass-fg;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
+            }
+            if Live.role == "viewer" && Live.battery >= 0: VerticalLayout {
+                alignment: start;
+                padding-top: 2px;
+                bt := Tag {
+                    property <bool> low: !Live.charging && Live.battery <= 20;
+                    property <color> accent: Live.charging ? Theme.live : Theme.alert;
+                    height: 23px;
+                    tint: Live.charging || self.low ? self.accent.mix(#ffffff, 0.55) : Theme.glass-fg;
+                    edge: Live.charging || self.low ? self.accent.transparentize(0.48) : Theme.glass-line;
+                    ground: Live.charging || self.low ? self.accent.transparentize(0.85) : #ffffff0a;
+                    accessible-role: text;
+                    accessible-label: @tr("Monitor battery") + ": " + Live.battery + "%";
+                    HorizontalLayout {
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        spacing: 3px;
+                        VerticalLayout {
+                            alignment: center;
+                            // The battery: a body, a nub, and its charge.
+                            Rectangle {
+                                width: 22px;
+                                height: 10px;
+                                Rectangle {
+                                    x: 0; width: 19px;
+                                    border-radius: 2px;
+                                    border-width: 1px;
+                                    border-color: bt.tint;
+                                }
+                                Rectangle {
+                                    x: 19.5px; y: 3px; width: 2px; height: 4px;
+                                    border-radius: 1px;
+                                    background: bt.tint;
+                                }
+                                Rectangle {
+                                    x: 2px; y: 2px; height: 6px;
+                                    width: 15px * clamp(Live.battery, 0, 100) / 100;
+                                    border-radius: 1px;
+                                    background: bt.tint;
+                                    animate width { duration: 350ms; }
+                                }
+                            }
+                        }
+                        if Live.charging: VerticalLayout {
+                            alignment: center;
+                            Path {
+                                width: 9px; height: 9px;
+                                viewbox-width: 24; viewbox-height: 24;
+                                commands: LiveGlyph.bolt;
+                                fill: Theme.live.mix(#ffffff, 0.82);
+                            }
+                        }
+                        Text {
+                            text: Live.battery + "%";
+                            font-family: Theme.strong-font;
+                            font-size: 10px;
+                            color: bt.tint;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+            if Live.role == "viewer" && Live.channel != "": VerticalLayout {
+                alignment: start;
+                padding-top: 2px;
+                Tag {
+                    height: 23px;
+                    max-width: 320px;
+                    ground: Theme.glass;
+                    HorizontalLayout {
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        Text {
+                            text: Live.channel;
+                            font-family: Theme.strong-font;
+                            font-size: 10px;
+                            letter-spacing: 1.2px;
+                            color: Theme.glass-dim;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A key on the glass (the safety card's two answers).
+component GlassKey inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    callback clicked();
+    height: 52px;
+    border-radius: Theme.r-ctl;
+    border-width: 1px;
+    border-color: primary ? Theme.berry : touch.has-hover ? Theme.live : Theme.glass-line;
+    background: primary ? (touch.has-hover ? Theme.berry.brighter(6%) : Theme.berry) : #ffffff12;
+    animate background, border-color { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { clicked(); }
+    forward-focus: focus;
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == "\n") { root.clicked(); return accept; }
+            reject
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text: root.text.to-uppercase();
+        font-family: Theme.strong-font;
+        font-size: 13.5px;
+        letter-spacing: 1.35px;
+        color: root.primary ? Theme.on-accent : touch.has-hover ? Theme.live : Theme.glass-fg;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        x: -4px; y: -4px; width: parent.width + 8px; height: parent.height + 8px;
+        border-radius: Theme.r-ctl + 4px;
+        border-width: focus.has-focus ? 2px : 0;
+        border-color: Theme.berry;
+    }
+}
+
+// One call in the chime tray.
+component ChimeKey inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    height: 42px;
+    width: label.preferred-width + 28px;
+    border-radius: Theme.r-ctl;
+    border-width: 1px;
+    border-color: touch.pressed ? Theme.berry : touch.has-hover ? Theme.berry.transparentize(0.35) : Theme.glass-line;
+    background: touch.pressed ? Theme.berry : touch.has-hover ? Theme.berry.transparentize(0.84) : #ffffff17;
+    animate background, border-color { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { clicked(); }
+    forward-focus: focus;
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == "\n") { root.clicked(); return accept; }
+            reject
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    label := Text {
+        text: root.text.to-uppercase();
+        font-family: Theme.strong-font;
+        font-size: 11px;
+        letter-spacing: 1.3px;
+        color: touch.pressed ? Theme.on-accent : touch.has-hover ? Theme.berry-lit : Theme.glass-fg;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        border-radius: Theme.r-ctl;
+        border-width: focus.has-focus ? 2px : 0;
+        border-color: Theme.berry;
+    }
+}
+
+export component LivePage inherits Rectangle {
+    // The picture's on-screen size, for the caller to fit frames to.
+    out property <length> stage-width: stage.width;
+    out property <length> stage-height: stage.height;
+
+    VerticalLayout {
+        stage := Rectangle {
+            vertical-stretch: 1;
+            background: Theme.stage;
+            clip: true;
+            init => {
+                Live.stage-w = self.width;
+                Live.stage-h = self.height;
+            }
+            changed width => {
+                Live.stage-w = self.width;
+            }
+            changed height => {
+                Live.stage-h = self.height;
+            }
+
+            if Live.has-video: Image {
+                x: Live.zoom-x;
+                y: Live.zoom-y;
+                width: parent.width * Live.zoom;
+                height: parent.height * Live.zoom;
+                source: Live.video;
+                image-fit: contain;
+                accessible-role: image;
+                accessible-label: Live.role == "viewer" ? @tr("The Monitor’s camera") : @tr("This camera");
+            }
+            // Under every key on the stage: only the picture itself zooms.
+            if Live.has-video && Live.role == "viewer": TouchArea {
+                mouse-cursor: Live.zoom > 1.005 ? (self.pressed ? MouseCursor.grabbing : MouseCursor.grab) : MouseCursor.default;
+                scroll-event(e) => {
+                    Live.zoom-wheel(e.delta-y, self.mouse-x, self.mouse-y);
+                    accept
+                }
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down {
+                        Live.zoom-press();
+                    }
+                }
+                moved => {
+                    if self.pressed {
+                        Live.zoom-drag(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y);
+                    }
+                }
+            }
+            if Live.connecting && !Live.has-video: Lantern {
+                accessible-role: text;
+                accessible-label: @tr("Connecting");
+            }
+            if Live.has-pip: Rectangle {
+                x: parent.width - self.width - 12px;
+                y: parent.height - self.height - 12px;
+                width: 180px;
+                height: 240px;
+                border-radius: Theme.r-ctl;
+                border-width: 1px;
+                border-color: Theme.glass-line;
+                background: #000000;
+                drop-shadow-color: #00000061;
+                drop-shadow-blur: 18px;
+                drop-shadow-offset-y: 6px;
+                clip: true;
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: Live.pip;
+                    image-fit: cover;
+                }
+            }
+
+            Rail {
+                y: 0;
+                width: parent.width;
+            }
+
+            // "Listening to you": a Viewer is talking to the room.
+            if Live.talkflag: Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: 92px;
+                width: flag.preferred-width + 30px;
+                height: 33px;
+                border-radius: Theme.r-chip;
+                background: Theme.live;
+                drop-shadow-color: Theme.live.transparentize(0.6);
+                drop-shadow-blur: 18px;
+                drop-shadow-offset-y: 6px;
+                flag := Text {
+                    text: @tr("Listening to you").to-uppercase();
+                    font-family: Theme.strong-font;
+                    font-size: 11px;
+                    letter-spacing: 1.75px;
+                    color: #ffffff;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    accessible-role: text;
+                }
+            }
+
+            // The one message over the picture.
+            if Live.note-title != "": Rectangle {
+                width: min(parent.width * 0.84, 340px);
+                height: note.preferred-height;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: Theme.r-card;
+                background: Theme.glass-deep;
+                border-width: 1px;
+                border-color: Theme.alert.transparentize(0.45);
+                drop-shadow-color: #00000066;
+                drop-shadow-blur: 32px;
+                drop-shadow-offset-y: 14px;
+                note := VerticalLayout {
+                    padding-left: 19px;
+                    padding-right: 19px;
+                    padding-top: 17px;
+                    padding-bottom: 17px;
+                    spacing: 6px;
+                    Text {
+                        text: Live.note-title;
+                        font-family: Theme.strong-font;
+                        font-size: 15px;
+                        color: Theme.alert;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                        accessible-role: text;
+                    }
+                    Text {
+                        text: Live.note-body;
+                        font-size: 13px;
+                        color: Theme.glass-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                        accessible-role: text;
+                    }
+                }
+            }
+
+            // Hold to talk (Viewer): a round key of its own on the picture.
+            // It steps aside while the safety card asks its question, so it
+            // never sits over that card's answers.
+            if Live.role == "viewer" && Live.sas-code == "": Rectangle {
+                property <bool> spotted: CoachSteps.current() == "talk";
+                function report() {
+                    Spot.x = self.absolute-position.x;
+                    Spot.y = self.absolute-position.y;
+                    Spot.width = self.width;
+                    Spot.height = self.height;
+                }
+                changed spotted => { if (self.spotted) { self.report(); } }
+                init => { if (self.spotted) { self.report(); } }
+                width: 68px;
+                height: 68px;
+                x: (parent.width - self.width) / 2;
+                y: parent.height - 34px - self.height;
+                if Live.talking && !Theme.still: Rectangle {
+                    property <float> u: mod(animation-tick() / 1.5s, 1);
+                    property <float> p: min(self.u / 0.7, 1);
+                    property <length> grow: 3px + 68px * 0.28 * self.p;
+                    x: -self.grow;
+                    y: -self.grow;
+                    width: parent.width + self.grow * 2;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Theme.live;
+                    opacity: 0.55 * (1 - self.p);
+                }
+                Rectangle {
+                    property <float> dip: talk.pressed && !Theme.still ? 0.94 : 1;
+                    animate dip { duration: 100ms; }
+                    width: parent.width * self.dip;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    border-width: 1px;
+                    border-color: Live.talking ? Theme.live : Theme.glass-line;
+                    background: Live.talking ? Theme.live : Theme.glass;
+                    drop-shadow-color: #0000004d;
+                    drop-shadow-blur: 20px;
+                    drop-shadow-offset-y: 8px;
+                    animate background, border-color { duration: Theme.quick; }
+                    Glyph24 {
+                        size: 28px;
+                        commands: LiveGlyph.mic;
+                        ink: Live.talking ? #ffffff : Theme.glass-fg;
+                    }
+                }
+                accessible-role: button;
+                accessible-label: Live.talking ? @tr("Talking") : @tr("Hold to talk");
+                talk := TouchArea {
+                    mouse-cursor: pointer;
+                    pointer-event(e) => {
+                        if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                            Live.talk(true);
+                        } else if (e.button == PointerEventButton.left && (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel)) {
+                            Live.talk(false);
+                        }
+                    }
+                }
+            }
+
+            // The Monitor's lenses, raised clear of the talk key.
+            if Live.role == "viewer" && Live.lenses.length > 1: Rectangle {
+                width: lens-row.preferred-width;
+                height: 36px;
+                x: (parent.width - self.width) / 2;
+                y: parent.height - 112px - self.height;
+                border-radius: 20px;
+                background: Theme.glass;
+                border-width: 1px;
+                border-color: Theme.glass-line;
+                drop-shadow-color: #0000004d;
+                drop-shadow-blur: 18px;
+                drop-shadow-offset-y: 6px;
+                lens-row := HorizontalLayout {
+                    padding: 4px;
+                    spacing: 3px;
+                    for name[i] in Live.lenses: Rectangle {
+                        width: lens-label.preferred-width + 26px;
+                        border-radius: 14px;
+                        background: i == Live.lens ? Theme.berry : lens-touch.has-hover ? #fff6ec24 : transparent;
+                        animate background { duration: 150ms; }
+                        accessible-role: button;
+                        accessible-label: name;
+                        accessible-checked: i == Live.lens;
+                        accessible-action-default => { Live.pick-lens(i); }
+                        lens-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Live.pick-lens(i); }
+                        }
+                        lens-label := Text {
+                            text: name;
+                            font-family: Theme.strong-font;
+                            font-size: 12px;
+                            letter-spacing: 0.5px;
+                            color: i == Live.lens ? Theme.on-accent : lens-touch.has-hover ? Theme.glass-fg : Theme.glass-fg.transparentize(0.26);
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+            if Live.zoom-text != "": Rectangle {
+                width: zoom-label.preferred-width + 36px;
+                height: 52px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: Theme.r-card;
+                background: Theme.glass;
+                border-width: 1px;
+                border-color: Theme.glass-line;
+                drop-shadow-color: #00000057;
+                drop-shadow-blur: 22px;
+                drop-shadow-offset-y: 8px;
+                zoom-label := Text {
+                    text: Live.zoom-text;
+                    font-family: Theme.strong-font;
+                    font-size: 24px;
+                    letter-spacing: 1px;
+                    color: Theme.glass-fg;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    accessible-role: text;
+                }
+            }
+
+            // The chime tray, above the talk key.
+            if Live.role == "viewer" && Live.chimes-open: Rectangle {
+                x: 8px;
+                width: parent.width - 16px;
+                height: 60px;
+                y: parent.height - 122px - self.height;
+                border-radius: Theme.r-card;
+                background: Theme.glass;
+                border-width: 1px;
+                border-color: Theme.glass-line;
+                drop-shadow-color: #00000061;
+                drop-shadow-blur: 28px;
+                drop-shadow-offset-y: 12px;
+                HorizontalLayout {
+                    padding: 8px;
+                    spacing: 6px;
+                    alignment: start;
+                    ChimeKey { text: @tr("Dog toy"); clicked => { Live.chime("bark"); } }
+                    ChimeKey { text: @tr("Psp psp psp"); clicked => { Live.chime("pspsps"); } }
+                    ChimeKey { text: @tr("Meow"); clicked => { Live.chime("meow"); } }
+                    ChimeKey { text: @tr("Good boy"); clicked => { Live.chime("goodboy"); } }
+                    ChimeKey { text: @tr("Bell"); clicked => { Live.chime("bell"); } }
+                }
+            }
+
+            // The first-call safety code.
+            if Live.sas-code != "": Rectangle {
+                width: min(parent.width * 0.88, 360px);
+                height: sas.preferred-height;
+                x: (parent.width - self.width) / 2;
+                y: parent.height - 16px - self.height;
+                border-radius: Theme.r-card;
+                background: Theme.glass-deep;
+                border-width: 1px;
+                border-color: Live.sas-warn ? Theme.live.transparentize(0.45) : Theme.glass-line;
+                drop-shadow-color: #0000006b;
+                drop-shadow-blur: 34px;
+                drop-shadow-offset-y: 14px;
+                sas := VerticalLayout {
+                    padding: 18px;
+                    spacing: 0;
+                    Text {
+                        text: Live.sas-note;
+                        font-size: 14px;
+                        color: Theme.glass-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                        accessible-role: text;
+                    }
+                    Rectangle { height: 10px; }
+                    Text {
+                        text: Live.sas-code;
+                        font-family: Theme.strong-font;
+                        font-size: 32px;
+                        letter-spacing: 5.8px;
+                        color: Live.sas-warn ? Theme.live.mix(#ffffff, 0.55) : Theme.sky-lit;
+                        horizontal-alignment: center;
+                        accessible-role: text;
+                        accessible-label: @tr("Safety code") + " " + Live.sas-code;
+                    }
+                    Rectangle { height: 14px; }
+                    HorizontalLayout {
+                        spacing: 9px;
+                        GlassKey {
+                            primary: true;
+                            text: @tr("Looks right");
+                            clicked => { Live.sas-ok(); }
+                        }
+                        GlassKey {
+                            text: @tr("Disconnect");
+                            clicked => { Live.sas-no(); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // The row of keys.
+        Rectangle {
+            height: 1px;
+            vertical-stretch: 0;
+            background: Theme.line;
+        }
+        Rectangle {
+            vertical-stretch: 0;
+            background: Theme.panel;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                padding-top: 9px;
+                padding-bottom: 9px;
+                spacing: 6px;
+                if Live.role == "viewer": Ctl {
+                    horizontal-stretch: 1;
+                    label: @tr("Chime");
+                    coach: "chime";
+                    glyph: LiveGlyph.chime;
+                    on: Live.chimes-open;
+                    clicked => { Live.chimes-open = !Live.chimes-open; }
+                }
+                if Live.role == "viewer": Ctl {
+                    horizontal-stretch: 1;
+                    label: @tr("Light");
+                    coach: "torch";
+                    glyph: LiveGlyph.torch;
+                    latched-glyph: LiveGlyph.beam;
+                    on: Live.torch-on;
+                    unavailable: Live.torch-unavailable;
+                    acc: Theme.alert;
+                    acc-d: Theme.alert;
+                    clicked => { Live.torch(); }
+                }
+                if Live.role == "viewer": Ctl {
+                    horizontal-stretch: 1;
+                    label: @tr("Mute");
+                    glyph: LiveGlyph.speaker;
+                    latched-glyph: LiveGlyph.speaker-slash;
+                    latched-slash: true;
+                    on: Live.listen-muted;
+                    clicked => { Live.listen-mute(); }
+                }
+                if Live.role == "viewer": Ctl {
+                    horizontal-stretch: 1;
+                    label: @tr("My camera");
+                    glyph: LiveGlyph.camera;
+                    on: Live.camera-on;
+                    clicked => { Live.camera(); }
+                }
+                if Live.role == "viewer": Ctl {
+                    horizontal-stretch: 1;
+                    label: @tr("Snapshot");
+                    coach: "snap";
+                    glyph: LiveGlyph.snapshot;
+                    clicked => { Live.snapshot(); }
+                }
+                if Live.role == "viewer": Ctl {
+                    horizontal-stretch: 1;
+                    label: Live.recording ? Live.record-left : @tr("Record");
+                    glyph: LiveGlyph.ring;
+                    dot-glyph: LiveGlyph.rec-dot;
+                    on: Live.recording;
+                    pulse: Live.recording;
+                    acc: Live.recording ? Theme.live : Theme.berry;
+                    acc-d: Live.recording ? Theme.live : Theme.berry-d;
+                    clicked => { Live.record(); }
+                }
+                if Live.role == "viewer": Ctl {
+                    horizontal-stretch: 1;
+                    label: @tr("Hang up");
+                    coach: "leave";
+                    glyph: LiveGlyph.hang-up;
+                    solid: true;
+                    danger: true;
+                    clicked => { Live.leave(); }
+                }
+                if Live.role == "station": Ctl {
+                    horizontal-stretch: 1;
+                    label: @tr("Flip camera");
+                    coach: "flip";
+                    glyph: LiveGlyph.flip;
+                    clicked => { Live.flip(); }
+                }
+                if Live.role == "station": Ctl {
+                    horizontal-stretch: 1;
+                    label: @tr("Mute mic");
+                    glyph: LiveGlyph.mic;
+                    latched-glyph: LiveGlyph.mic-slash;
+                    latched-slash: true;
+                    on: Live.mic-muted;
+                    // A muted mic is a warning, not a preference.
+                    acc: Live.mic-muted ? Theme.live : Theme.berry;
+                    acc-d: Live.mic-muted ? Theme.live : Theme.berry-d;
+                    clicked => { Live.mic-mute(); }
+                }
+                if Live.role == "station": Ctl {
+                    horizontal-stretch: 1;
+                    label: @tr("Dim screen");
+                    coach: "dim";
+                    glyph: LiveGlyph.moon;
+                    clicked => { Live.dim(); }
+                }
+                if Live.role == "station": Ctl {
+                    horizontal-stretch: 1;
+                    label: @tr("End call");
+                    coach: "stop";
+                    glyph: LiveGlyph.hang-up;
+                    solid: true;
+                    danger: true;
+                    clicked => { Live.stop(); }
+                }
+            }
+        }
+    }
+
+    // Dimmed (Monitor): black, a big meter so the room still shows it is
+    // listening, and a whisper of a way back. Any click wakes it.
+    if Live.dimmed: Rectangle {
+        background: #000000;
+        accessible-role: button;
+        accessible-label: @tr("On air — tap to wake the screen");
+        accessible-action-default => { Live.wake(); }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Live.wake(); }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 22px;
+            HorizontalLayout {
+                alignment: center;
+                Meter {
+                    level: Live.level;
+                    bar: 6px;
+                    tall: 46px;
+                    gap: 6px;
+                }
+            }
+            Text {
+                text: @tr("On air — tap to wake the screen").to-uppercase();
+                font-size: 10.5px;
+                letter-spacing: 2.3px;
+                color: #7d6f5e;
+                horizontal-alignment: center;
+            }
+        }
+    }
+
+    // The walkthrough: a ring cut out of a dim veil round one key, and a
+    // bubble saying what it does. A click anywhere moves on.
+    // Not over the safety card: the tour waits until it is answered.
+    if Live.coach-step >= 0 && Live.sas-code == "": coach := Rectangle {
+        property <[string]> keys: CoachSteps.keys(Live.role);
+        property <[string]> lines: Live.role == "station" ? [
+            @tr("Tap the little phone to see who’s watching this camera, by name and phone."),
+            @tr("Once a phone is watching, dim the screen. The stream keeps running and the battery lasts far longer."),
+            @tr("Switch between the front and back camera."),
+            @tr("Stop monitoring. Viewers can’t look in until you start again."),
+        ] : [
+            @tr("Hold this to talk to your pet. Let go and the room stops hearing you."),
+            @tr("Play a sound on the Monitor — a squeaky toy, a meow, a bell — to call them over."),
+            @tr("Tap the little phone to see who’s watching with you, by name and phone. You can change your own name there too."),
+            @tr("Turn on the Monitor’s light to see into a dark room."),
+            @tr("Save a photo of what the Monitor sees right now."),
+            @tr("Hang up here. The Monitor keeps watching, so you can look in again any time."),
+        ];
+        property <int> step: Live.coach-step;
+        property <bool> last: self.step >= self.keys.length - 1;
+        // The ring, 6 px round the key.
+        property <length> rx: Spot.x - root.absolute-position.x - 6px;
+        property <length> ry: Spot.y - root.absolute-position.y - 6px;
+        property <length> rw: Spot.width + 12px;
+        property <length> rh: Spot.height + 12px;
+        property <length> rr: min(Theme.r-ctl + 6px, min(self.rw, self.rh) / 2);
+        animate rx, ry, rw, rh { duration: Theme.still ? 0ms : 280ms; easing: ease; }
+
+        function next() {
+            if (self.last) {
+                Live.coach-step = -1;
+                Live.coach-done();
+            } else {
+                Live.coach-step += 1;
+            }
+        }
+
+        accessible-role: groupbox;
+        accessible-label: self.lines[self.step];
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => { parent.next(); }
+        }
+        FocusScope {
+            init => { self.focus(); }
+            key-pressed(e) => {
+                if (e.text == Key.Escape) { Live.coach-step = -1; Live.coach-done(); return accept; }
+                if (e.text == " " || e.text == "\n" || e.text == Key.RightArrow) { parent.next(); return accept; }
+                reject
+            }
+        }
+        // The veil, with the key's rounded hole in it.
+        Path {
+            width: 100%;
+            height: 100%;
+            viewbox-width: root.width / 1px;
+            viewbox-height: root.height / 1px;
+            fill-rule: evenodd;
+            fill: #08070a9e;
+            commands: "M0 0H" + root.width / 1px + "V" + root.height / 1px + "H0Z"
+                + " M" + (parent.rx + parent.rr) / 1px + " " + parent.ry / 1px
+                + " H" + (parent.rx + parent.rw - parent.rr) / 1px
+                + " A" + parent.rr / 1px + " " + parent.rr / 1px + " 0 0 1 " + (parent.rx + parent.rw) / 1px + " " + (parent.ry + parent.rr) / 1px
+                + " V" + (parent.ry + parent.rh - parent.rr) / 1px
+                + " A" + parent.rr / 1px + " " + parent.rr / 1px + " 0 0 1 " + (parent.rx + parent.rw - parent.rr) / 1px + " " + (parent.ry + parent.rh) / 1px
+                + " H" + (parent.rx + parent.rr) / 1px
+                + " A" + parent.rr / 1px + " " + parent.rr / 1px + " 0 0 1 " + parent.rx / 1px + " " + (parent.ry + parent.rh - parent.rr) / 1px
+                + " V" + (parent.ry + parent.rr) / 1px
+                + " A" + parent.rr / 1px + " " + parent.rr / 1px + " 0 0 1 " + (parent.rx + parent.rr) / 1px + " " + parent.ry / 1px + " Z";
+        }
+        Rectangle {
+            x: parent.rx;
+            y: parent.ry;
+            width: parent.rw;
+            height: parent.rh;
+            border-radius: parent.rr;
+            border-width: 2px;
+            border-color: Theme.berry;
+        }
+        // The bubble: below the key in the top half, above it in the bottom.
+        bubble := Rectangle {
+            property <bool> below: parent.ry + parent.rh / 2 < root.height / 2;
+            width: min(320px, root.width - 24px);
+            height: words.preferred-height;
+            x: clamp(parent.rx + parent.rw / 2 - self.width / 2, 12px, root.width - self.width - 12px);
+            y: self.below ? parent.ry + parent.rh + 12px : parent.ry - self.height - 12px;
+            border-radius: Theme.r-card;
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.line;
+            drop-shadow-color: #0c0d128c;
+            drop-shadow-blur: 34px;
+            drop-shadow-offset-y: 14px;
+            // Clicks on the bubble stay on its keys.
+            TouchArea { }
+            words := VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 14px;
+                padding-bottom: 10px;
+                spacing: 8px;
+                Text {
+                    text: coach.lines[coach.step];
+                    font-size: 15px;
+                    color: Theme.fg;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: (coach.step + 1) + " / " + coach.keys.length;
+                        font-size: 12px;
+                        letter-spacing: 0.5px;
+                        color: Theme.dim;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    if !coach.last: Rectangle {
+                        width: skip-label.preferred-width + 28px;
+                        height: 40px;
+                        border-radius: Theme.r-ctl;
+                        background: skip-touch.has-hover ? Theme.raise : transparent;
+                        accessible-role: button;
+                        accessible-label: skip-label.text;
+                        accessible-action-default => { Live.coach-step = -1; Live.coach-done(); }
+                        skip-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Live.coach-step = -1; Live.coach-done(); }
+                        }
+                        skip-label := Text {
+                            text: @tr("Skip");
+                            font-size: 14px;
+                            color: Theme.dim;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Rectangle {
+                        width: next-label.preferred-width + 28px;
+                        height: 40px;
+                        border-radius: Theme.r-ctl;
+                        background: next-touch.has-hover ? Theme.berry.brighter(6%) : Theme.berry;
+                        accessible-role: button;
+                        accessible-label: next-label.text;
+                        accessible-action-default => { coach.next(); }
+                        next-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { coach.next(); }
+                        }
+                        next-label := Text {
+                            text: coach.last ? @tr("Got it") : @tr("Next");
+                            font-family: Theme.strong-font;
+                            font-size: 14px;
+                            color: Theme.on-accent;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

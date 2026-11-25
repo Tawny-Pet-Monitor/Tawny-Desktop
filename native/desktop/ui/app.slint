@@ -1,0 +1,290 @@
+// Tawny Desktop: one window, the screens of web/index.html.
+
+import { Theme } from "theme.slint";
+import { Welcome } from "welcome.slint";
+import { SetupRole } from "setup.slint";
+import { WatchPair } from "pair.slint";
+import { Channel, Channels } from "channels.slint";
+import { Join } from "join.slint";
+import { Live, LivePage } from "live.slint";
+import { DeleteConfirm, Editor, RowMenu } from "sheets.slint";
+import { MyNameSheet, OnlySheet, PairSheet, RelayCheck, ScannerSheet, ServersSheet, SupportSheet, WhatsNewSheet, WhoEntry, WhoSheet } from "sheets2.slint";
+import { ThemeToggle, Toast } from "chrome.slint";
+
+import { Tip, TipAmount } from "tip.slint";
+
+export { Theme, Channel, Live, WhoEntry, RelayCheck, Tip, TipAmount }
+
+export component AppWindow inherits Window {
+    title: "Tawny";
+    preferred-width: 1280px;
+    preferred-height: 800px;
+    min-width: 360px;
+    min-height: 560px;
+    default-font-family: Theme.text-font;
+    background: Theme.bg;
+
+    // Which screen is up (the web page's <main> ids).
+    in-out property <string> screen: "welcome";
+    in property <image> scene;
+    out property <length> scene-width: welcome.scene-width;
+    out property <length> scene-height: welcome.scene-height;
+
+    callback welcome-go();
+    callback welcome-skip();
+    callback scene-tapped(length, length, length, length);
+    // The Monitor's pairing screen.
+    in property <image> pair-qr;
+    in property <string> pair-link;
+    in property <string> pair-status: @tr("Waiting for the Viewer");
+    in-out property <bool> pair-copied;
+    callback pair-copy();
+    callback pair-start();
+    callback pair-later();
+    callback pick-monitor();
+    callback pick-viewer();
+
+    // The home screen: the channels and the Support card's owlet.
+    in property <[Channel]> channels;
+    in property <image> owlet;
+    in property <bool> servers: true;
+    out property <length> owlet-width: 40px;
+    out property <length> owlet-height: 36px;
+    callback channel-open(string);
+    callback channel-more(string);
+    callback channel-add();
+    callback set-up();
+    callback scan();
+    callback support();
+    callback open-servers();
+    callback owlet-tapped(length, length, length, length);
+
+    // A channel's job (#role): its name; and the pick.
+    in property <string> role-name;
+    callback role-monitor();
+    callback role-viewer();
+    // A pairing link opened (#join): the Monitor's name, and a warning if any.
+    in property <string> join-name: @tr("the monitor");
+    in property <string> join-note;
+    callback join-go();
+    callback join-cancel();
+
+    // The sheet over the screen (the page's sheet ids), or none.
+    in-out property <string> sheet;
+    // Said whenever the sheet changes (the scanner's camera follows it).
+    callback sheet-changed(string);
+    changed sheet => { root.sheet-changed(root.sheet); }
+    // The name editor: what is typed, and whether it renames a channel.
+    in-out property <string> editor-name;
+    in property <bool> editor-renaming;
+    callback menu-rename();
+    callback menu-switch-role();
+    callback menu-delete();
+    callback delete-confirmed();
+    callback editor-save(string);
+    // Who's here, and this device's name.
+    in property <[WhoEntry]> who;
+    in property <bool> who-old-monitor;
+    in-out property <string> my-name;
+    callback my-name-save(string);
+    // Pair a Viewer to a channel.
+    in property <string> pair-channel;
+    in property <string> pair-expiry;
+    callback pair-sheet-copy();
+    // The scanner's camera.
+    in property <image> scan-preview;
+    in property <bool> scan-has-preview;
+    in property <string> scan-hint: @tr("Hold the Monitor’s code in frame.");
+    callback scan-paste();
+    // Servers and "only my relays".
+    in-out property <string> relays;
+    in-out property <bool> relays-only;
+    in property <[RelayCheck]> relay-health;
+    in property <string> servers-note;
+    callback servers-save(string, bool);
+    in property <[RelayCheck]> only-checks;
+    in property <string> only-verdict;
+    in property <bool> only-passed;
+    callback only-confirm();
+    // The update board.
+    in property <string> whatsnew-version;
+    in property <[string]> whatsnew-notes;
+    in property <bool> whatsnew-changelog;
+    callback open-changelog();
+    // The Support hub's trio.
+    in property <image> hub-scene;
+    out property <length> hub-scene-width: 330px;
+    out property <length> hub-scene-height: 236px;
+    callback hub-scene-tapped(length, length, length, length);
+    callback open-kofi();
+    callback open-lightning();
+
+    // The theme was switched (system, light or dark): keep it.
+    callback theme-changed(string);
+    // A line that says what just happened, for a moment.
+    in-out property <string> toast;
+
+    // The faint blush at the top of the page (light only).
+    Rectangle {
+        background: @radial-gradient(circle, Theme.blush 0%, transparent 55%);
+        width: parent.width * 1.3;
+        height: parent.height * 0.9 * 2;
+        x: (parent.width - self.width) / 2;
+        y: -parent.height * 0.2 - self.height / 2;
+    }
+
+    welcome := Welcome {
+        visible: root.screen == "welcome";
+        scene: root.scene;
+        go => { root.welcome-go(); }
+        skip => { root.welcome-skip(); }
+        scene-tapped(x, y, w, h) => { root.scene-tapped(x, y, w, h); }
+    }
+
+    if root.screen == "setup-role": SetupRole {
+        back => { root.screen = "welcome"; }
+        monitor => { root.pick-monitor(); }
+        viewer => { root.pick-viewer(); }
+    }
+
+    if root.screen == "role": SetupRole {
+        title: root.role-name;
+        sub: @tr("Pick this device’s job");
+        back-label: @tr("Back to channels");
+        monitor-line: @tr("Leave it with the pet");
+        monitor-blurb: @tr("Sends camera and microphone, answers on its own, plays chimes, and shows a pairing code for your phone.");
+        viewer-line: @tr("Keep it with you");
+        viewer-blurb: @tr("Watch and listen, hold to talk, ring a chime, save a snapshot.");
+        back => { root.screen = "channels"; }
+        monitor => { root.role-monitor(); }
+        viewer => { root.role-viewer(); }
+    }
+
+    if root.screen == "join": Join {
+        name: root.join-name;
+        note: root.join-note;
+        go => { root.join-go(); }
+        cancel => { root.join-cancel(); }
+    }
+
+    if root.screen == "live": LivePage { }
+
+    if root.screen == "channels": Channels {
+        channels: root.channels;
+        owlet: root.owlet;
+        servers: root.servers;
+        open(id) => { root.channel-open(id); }
+        more(id) => { root.channel-more(id); }
+        add => { root.channel-add(); }
+        support => { root.support(); }
+        set-up => { root.set-up(); }
+        scan => { root.scan(); }
+        open-servers => { root.open-servers(); }
+        owlet-tapped(x, y, w, h) => { root.owlet-tapped(x, y, w, h); }
+    }
+
+    if root.screen == "watch-pair": WatchPair {
+        qr: root.pair-qr;
+        link: root.pair-link;
+        status: root.pair-status;
+        copied: root.pair-copied;
+        back => { root.screen = "setup-role"; }
+        copy => { root.pair-copy(); }
+        start => { root.pair-start(); }
+        later => { root.pair-later(); }
+    }
+
+    if root.sheet == "row-menu": RowMenu {
+        dismiss => { root.sheet = ""; }
+        rename => { root.menu-rename(); }
+        switch-role => { root.menu-switch-role(); }
+        delete => { root.menu-delete(); }
+    }
+    if root.sheet == "del-confirm": DeleteConfirm {
+        dismiss => { root.sheet = ""; }
+        confirmed => { root.delete-confirmed(); }
+    }
+    if root.sheet == "editor": Editor {
+        name <=> root.editor-name;
+        renaming: root.editor-renaming;
+        dismiss => { root.sheet = ""; }
+        save(name) => { root.editor-save(name); }
+    }
+
+    if root.sheet == "who": WhoSheet {
+        min-card-height: root.height / 2;
+        entries: root.who;
+        old-monitor: root.who-old-monitor;
+        dismiss => { root.sheet = ""; }
+        rename => { root.sheet = "myname"; }
+    }
+    if root.sheet == "myname": MyNameSheet {
+        name <=> root.my-name;
+        dismiss => { root.sheet = ""; }
+        save(n) => { root.my-name-save(n); }
+    }
+    if root.sheet == "pair": PairSheet {
+        channel: root.pair-channel;
+        qr: root.pair-qr;
+        expiry: root.pair-expiry;
+        link: root.pair-link;
+        dismiss => { root.sheet = ""; }
+        copy => { root.pair-sheet-copy(); }
+    }
+    if root.sheet == "scanner": ScannerSheet {
+        preview: root.scan-preview;
+        has-preview: root.scan-has-preview;
+        hint: root.scan-hint;
+        dismiss => { root.sheet = ""; }
+        paste => { root.scan-paste(); }
+    }
+    if root.sheet == "servers": ServersSheet {
+        relays <=> root.relays;
+        only <=> root.relays-only;
+        health: root.relay-health;
+        note: root.servers-note;
+        dismiss => { root.sheet = ""; }
+        save(r, o) => { root.servers-save(r, o); }
+    }
+    if root.sheet == "only": OnlySheet {
+        checks: root.only-checks;
+        verdict: root.only-verdict;
+        passed: root.only-passed;
+        dismiss => { root.sheet = ""; }
+        confirm => { root.only-confirm(); }
+    }
+    if root.sheet == "whatsnew": WhatsNewSheet {
+        version: root.whatsnew-version;
+        notes: root.whatsnew-notes;
+        has-changelog: root.whatsnew-changelog;
+        dismiss => { root.sheet = ""; }
+        changelog => { root.open-changelog(); }
+        support => { root.sheet = "tip"; }
+    }
+    if root.sheet == "tip": SupportSheet {
+        scene: root.hub-scene;
+        dismiss => { root.sheet = ""; }
+        scene-tapped(x, y, w, h) => { root.hub-scene-tapped(x, y, w, h); }
+        kofi => { root.open-kofi(); }
+        lightning => { root.open-lightning(); }
+    }
+
+    // The theme key: top right, on every screen but a call. In a call it sat
+    // just above End call, one slip from hanging up; there is nothing on the
+    // live screen it needs to be in reach for.
+    if root.screen != "live": ThemeToggle {
+        x: parent.width - self.width - 12px;
+        y: 10px;
+        changed(label) => {
+            root.toast = label;
+            root.theme-changed(Theme.mode);
+        }
+    }
+
+    Toast {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - 96px - self.height;
+        text <=> root.toast;
+        lasts: 1.6s;
+    }
+}

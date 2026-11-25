@@ -1,0 +1,57 @@
+[workspace]
+members = ["ffi"]
+
+[package]
+name = "tawny-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "The shared engine inside the Tawny apps: pairing, signalling and calls."
+license = "MIT"
+repository = "https://github.com/Tawny-Pet-Monitor/Tawny-Core"
+publish = false
+
+[dependencies]
+base64 = "0.22"
+chacha20 = "0.9"
+getrandom = "0.3"
+hex = "0.4"
+hmac = "0.12"
+k256 = { version = "0.14", features = ["schnorr", "ecdh"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+url = "2"
+
+# The `net` feature: a ready-made driver over real relays (tokio + WebSockets).
+futures-util = { version = "0.3", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"], optional = true }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"], optional = true }
+
+# The `media` feature: the WebRTC peers (LiveKit's libwebrtc bindings).
+libwebrtc = { version = "=0.4.2", optional = true }
+
+[features]
+net = ["dep:futures-util", "dep:rustls", "dep:tokio", "dep:tokio-tungstenite"]
+media = ["dep:libwebrtc", "dep:tokio"]
+engine = ["net", "media"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+futures-util = "0.3"
+tokio-tungstenite = "0.26"
+
+[lints.rust]
+future_incompatible = { level = "warn", priority = -2 }
+nonstandard_style = { level = "deny", priority = -1 }
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "warn"
+module_name_repetitions = "allow"

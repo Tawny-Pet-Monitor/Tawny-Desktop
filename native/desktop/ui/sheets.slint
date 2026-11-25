@@ -1,0 +1,282 @@
+// The sheets (web/index.html .sheet): on a desktop window each is a centred
+// card over a dimmed page, as the page draws them past 720 px.
+
+import { Theme } from "theme.slint";
+import { GhostButton, PrimaryButton } from "widgets.slint";
+
+// The frame every sheet shares: the scrim, the card, its title, and the ways
+// out (Escape, a click on the scrim).
+export component Sheet inherits Rectangle {
+    in property <string> title;
+    in property <length> card-width: 480px;
+    // Some sheets keep a floor (who's here: half the window).
+    in property <length> min-card-height: 0;
+    callback dismiss();
+
+    // Fades in and rises 12 px as it opens.
+    property <bool> open;
+    init => {
+        self.open = true;
+        keys.focus();
+    }
+
+    background: #0c0d12a8;
+    opacity: open ? 1 : 0;
+    animate opacity { duration: Theme.still ? 0ms : 220ms; }
+
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.Escape) { root.dismiss(); return accept; }
+            reject
+        }
+    }
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+    card := Rectangle {
+        width: min(root.card-width, root.width - 40px);
+        height: min(max(body.preferred-height, root.min-card-height), root.height - 40px);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2 + (root.open ? 0 : 12px);
+        animate y { duration: Theme.still ? 0ms : 270ms; easing: cubic-bezier(0.22, 0.9, 0.28, 1); }
+        background: Theme.panel;
+        border-radius: Theme.r-card;
+        border-width: 1px;
+        border-color: Theme.line;
+        drop-shadow-color: #00000059;
+        drop-shadow-blur: 40px;
+        drop-shadow-offset-y: 16px;
+        accessible-role: groupbox;
+        accessible-label: root.title;
+        // Clicks on the card stay on the card.
+        TouchArea { }
+        body := VerticalLayout {
+            padding-left: 20px;
+            padding-right: 20px;
+            padding-top: 16px;
+            padding-bottom: 20px;
+            spacing: 13px;
+            alignment: start;
+            if root.title != "": Text {
+                text: root.title;
+                font-family: Theme.strong-font;
+                font-size: 19px;
+                color: Theme.fg;
+                wrap: word-wrap;
+                accessible-role: text;
+            }
+            @children
+        }
+    }
+}
+
+// A line in a sheet's menu (".menu-item"): a glyph and a word.
+export component MenuItem inherits Rectangle {
+    in property <string> text;
+    in property <string> glyph;
+    in property <bool> danger;
+    callback clicked();
+
+    min-height: 54px;
+    border-radius: Theme.r-ctl;
+    background: touch.pressed ? Theme.berry.transparentize(0.87) : touch.has-hover ? Theme.raise : transparent;
+    animate background { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { clicked(); }
+    forward-focus: focus;
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == "\n") { root.clicked(); return accept; }
+            reject
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Path {
+                width: 21px;
+                height: 21px;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: root.glyph;
+                stroke: root.danger ? Theme.live : Theme.dim;
+                stroke-width: 1.7px;
+                stroke-line-cap: round;
+                stroke-line-join: round;
+                fill: transparent;
+            }
+        }
+        Text {
+            text: root.text;
+            font-size: 16px;
+            color: root.danger ? Theme.live : Theme.fg;
+            vertical-alignment: center;
+        }
+    }
+    Rectangle {
+        border-radius: Theme.r-ctl;
+        border-width: focus.has-focus ? 2px : 0;
+        border-color: Theme.berry;
+    }
+}
+
+// A labelled text box (".field"): the small caps label, the box, a note.
+export component Field inherits VerticalLayout {
+    in property <string> label;
+    in property <string> placeholder;
+    in-out property <string> text;
+    callback accepted();
+    forward-focus: input;
+
+    spacing: 8px;
+    Text {
+        text: root.label.to-uppercase();
+        font-size: 11px;
+        letter-spacing: 2px;
+        color: Theme.dim;
+    }
+    Rectangle {
+        min-height: 50px;
+        border-radius: Theme.r-ctl;
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: input.has-focus ? Theme.berry : Theme.line;
+        // The page's focus halo: a soft accent ring 1 px out.
+        Rectangle {
+            x: -3px; y: -3px; width: parent.width + 6px; height: parent.height + 6px;
+            border-radius: Theme.r-ctl + 3px;
+            border-width: input.has-focus ? 2px : 0;
+            border-color: Theme.berry.transparentize(0.7);
+        }
+        HorizontalLayout {
+            padding-left: 14px;
+            padding-right: 14px;
+            if root.text == "": Text {
+                text: root.placeholder;
+                font-size: 16px;
+                letter-spacing: 0.6px;
+                color: Theme.dim.transparentize(0.25);
+                vertical-alignment: center;
+            }
+        }
+        HorizontalLayout {
+            padding-left: 14px;
+            padding-right: 14px;
+            input := TextInput {
+                text <=> root.text;
+                font-size: 16px;
+                letter-spacing: 0.6px;
+                color: Theme.fg;
+                selection-background-color: Theme.berry.transparentize(0.7);
+                vertical-alignment: center;
+                single-line: true;
+                accessible-label: root.label;
+                accepted => { root.accepted(); }
+            }
+        }
+    }
+}
+
+// A dim paragraph in a sheet (".hint").
+export component Hint inherits Text {
+    font-size: 15px;
+    color: Theme.dim;
+    wrap: word-wrap;
+    accessible-role: text;
+}
+
+// The channel row's options (#row-menu).
+export component RowMenu inherits Sheet {
+    callback rename();
+    callback switch-role();
+    callback delete();
+    title: @tr("Channel");
+    VerticalLayout {
+        spacing: 2px;
+        padding-left: -8px;
+        padding-right: -8px;
+        MenuItem {
+            text: @tr("Rename");
+            glyph: "M4 20h4l10-10-4-4L4 16v4Z M14.5 5.5l4 4";
+            clicked => { root.rename(); }
+        }
+        MenuItem {
+            text: @tr("Switch role");
+            glyph: "M17 2.1 21 6l-4 3.9 M3 11V9a4 4 0 0 1 4-4h14 M7 21.9 3 18l4-3.9 M21 13v2a4 4 0 0 1-4 4H3";
+            clicked => { root.switch-role(); }
+        }
+        MenuItem {
+            text: @tr("Delete channel");
+            glyph: "M5 7h14M10 7V4.5h4V7 M6 7l1 13h10l1-13";
+            danger: true;
+            clicked => { root.delete(); }
+        }
+    }
+    GhostButton {
+        text: @tr("Cancel");
+        clicked => { root.dismiss(); }
+    }
+}
+
+// "Delete channel?" (#del-confirm).
+export component DeleteConfirm inherits Sheet {
+    callback confirmed();
+    title: @tr("Delete channel?");
+    Hint {
+        text: @tr("Devices paired to it will stop connecting. You can pair them again later.");
+    }
+    HorizontalLayout {
+        spacing: 9px;
+        GhostButton {
+            width: (parent.width - 9px) / 2;
+            text: @tr("Cancel");
+            clicked => { root.dismiss(); }
+        }
+        PrimaryButton {
+            width: (parent.width - 9px) / 2;
+            danger: true;
+            text: @tr("Delete");
+            clicked => { root.confirmed(); }
+        }
+    }
+}
+
+// A new channel, or a new name for one (#editor).
+export component Editor inherits Sheet {
+    in-out property <string> name;
+    in property <bool> renaming;
+    callback save(string);
+    title: renaming ? @tr("Rename channel") : @tr("New channel");
+    field := Field {
+        label: @tr("Name");
+        placeholder: @tr("Living room");
+        text <=> root.name;
+        accepted => { root.save(root.name); }
+    }
+    Hint {
+        text: root.renaming ? @tr("The key stays the same, so paired devices keep working.")
+            : @tr("A fresh key is generated for this channel. Only devices you pair can join it.");
+    }
+    HorizontalLayout {
+        spacing: 9px;
+        GhostButton {
+            width: (parent.width - 9px) / 2;
+            text: @tr("Cancel");
+            clicked => { root.dismiss(); }
+        }
+        PrimaryButton {
+            width: (parent.width - 9px) / 2;
+            text: @tr("Save");
+            clicked => { root.save(root.name); }
+        }
+    }
+    init => { field.focus(); }
+}
