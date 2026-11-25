@@ -269,13 +269,12 @@ export component AppWindow inherits Window {
         lightning => { root.open-lightning(); }
     }
 
-    // The theme key: top right, and in a call just above the row of keys so
-    // it clears the rail.
-    // Hidden while the Monitor's screen is dimmed (nothing lit on black) and
-    // under the walkthrough's veil.
-    if !(root.screen == "live" && (Live.dimmed || (Live.coach-step >= 0 && Live.sas-code == ""))): ThemeToggle {
+    // The theme key: top right, on every screen but a call. In a call it sat
+    // just above End call, one slip from hanging up; there is nothing on the
+    // live screen it needs to be in reach for.
+    if root.screen != "live": ThemeToggle {
         x: parent.width - self.width - 12px;
-        y: root.screen == "live" ? parent.height - 84px - self.height : 10px;
+        y: 10px;
         changed(label) => {
             root.toast = label;
             root.theme-changed(Theme.mode);
