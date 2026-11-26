@@ -7,7 +7,7 @@ name: Native Windows
 
 on:
   push:
-    branches: [devops/native]
+    branches: [main, devops/native]
     paths:
       - 'native/**'
       - '.github/workflows/native-windows.yml'
@@ -46,10 +46,22 @@ jobs:
       - name: Test
         run: cargo test --release --locked
 
-      # The runner image no longer carries NSIS; a pinned one from Chocolatey.
+      # The runner image no longer carries NSIS. Chocolatey's feed went down for
+      # a day (503), so it comes from the NSIS project's own release instead,
+      # checked against a pinned SHA-256.
       - name: NSIS
         shell: pwsh
-        run: choco install nsis --version=3.11.0 -y --no-progress
+        run: |
+          $zip = "$env:RUNNER_TEMP\nsis-3.11.zip"
+          $url = 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11.zip'
+          for ($i = 1; $i -le 5; $i++) {
+            try { Invoke-WebRequest -Uri $url -OutFile $zip -UserAgent 'curl'; break }
+            catch { if ($i -eq 5) { throw }; Start-Sleep -Seconds (10 * $i) }
+          }
+          $sum = (Get-FileHash $zip -Algorithm SHA256).Hash
+          if ($sum -ne 'C7D27F780DDB6CFFB4730138CD1591E841F4B7EDB155856901CDF5F214394FA1') { throw "NSIS checksum $sum" }
+          Expand-Archive $zip -DestinationPath $env:RUNNER_TEMP
+          "$env:RUNNER_TEMP\nsis-3.11" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Installer
         shell: pwsh
