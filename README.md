@@ -8,9 +8,10 @@
 # 🦉 Tawny Desktop
 
 Tawny, the private two-way pet monitor, for Linux and Windows. Point a webcam
-at your pet (**Monitor**) or watch one from your computer (**Viewer**). It uses
-the same web client as the Android app and pairs with it by QR code. No
-account, no sign-up.
+at your pet (**Monitor**) or watch one from your computer (**Viewer**). It runs
+on the same Rust engine as the Android app,
+[tawny-core](https://github.com/Tawny-Pet-Monitor/Tawny-Core), and pairs with
+it by QR code. No account, no sign-up.
 
 Video and audio go **peer to peer over WebRTC**, encrypted end to end
 (DTLS-SRTP).
@@ -21,6 +22,7 @@ not depend on any one company's server. See [Nostr](#nostr) below.
 
 - **Android app:** [Tawny-APK](https://github.com/Tawny-Pet-Monitor/Tawny-APK)
 - **Self-hosting:** [Tawny Docker](https://github.com/Tawny-Pet-Monitor/Tawny-Docker)
+- **The engine:** [Tawny-Core](https://github.com/Tawny-Pet-Monitor/Tawny-Core)
 
 ## Install
 
@@ -34,27 +36,22 @@ x86_64 only for now.
 
 **AppImage notes**
 
-- **Ubuntu 23.10 and later** block the user namespaces Chromium's sandbox
-  needs. On first run the AppImage offers to add an AppArmor exception for
-  itself, which asks for your password. Say yes; it's the same profile
-  Chrome and other Chromium-based apps install. The exception is tied to the
-  file's path, so it asks again after you move or rename the AppImage.
+- The AppImage needs only glibc, ALSA and fontconfig from the system, which
+  every desktop Linux has.
 - If the system has no FUSE, the AppImage unpacks itself to a temporary
   folder on each launch instead. It still runs, but starts more slowly.
   `sudo apt install fuse3` (or your distro's equivalent) avoids that.
-- 0.1.2 and earlier crash on startup on hosts with a newer NSS than the
-  build machine (`nss_util.cc` FATAL in the terminal). Fixed in 0.1.3.
+- 0.2.0 has no Chromium inside, so the AppArmor prompt that 0.1.x showed on
+  Ubuntu 23.10 and later is gone.
 
 **Windows notes**
 
 - The installer isn't code-signed yet, so SmartScreen says "Windows protected
   your PC". Choose **More info → Run anyway**.
+- It replaces 0.1.x in the same place, with the same Start menu entry, and
+  keeps your channels.
 - If the camera doesn't come on, check **Settings → Privacy & security →
   Camera → Let desktop apps access your camera**.
-- Chromium's own process sandbox is **off** on Windows. Tauri's CEF runtime
-  can't yet host the broker process the Windows sandbox needs. The page Tawny
-  loads is only ever its own, but the renderer has less isolation than on
-  Linux, where the sandbox is on.
 
 ## Nostr
 
@@ -78,90 +75,78 @@ on the same network.
 
 ## How it's built
 
-Since 0.2.0 the app is native: `native/desktop` is the app in Rust with a
-[Slint](https://slint.dev) UI, and `native/core` is a copy of **tawny-core**,
-Tawny's shared engine, whose home is
-[**Tawny-Core**](https://github.com/Tawny-Pet-Monitor/Tawny-Core). What follows
-describes the earlier Tauri build (0.1.x), which is still in this repo.
+Since 0.2.0 Tawny Desktop is a native program, written in Rust. There is no
+browser engine inside it any more.
 
-The app is Rust: [Tauri 3](https://tauri.app) running on the **Chromium Embedded
-Framework** (`tauri-runtime-cef`), not the usual WebKitGTK. Tawny is WebRTC
-from end to end, and WebKitGTK's WebRTC is off or incomplete on most distros.
-CEF is the same Chromium that Electron ships.
+- **The screens** are [Slint](https://slint.dev), drawn with the GPU, or on
+  the CPU when there is no usable GPU driver. They follow the system's light or
+  dark theme, unless you pick one, and its reduced-motion setting.
+- **The engine** is [**tawny-core**](https://github.com/Tawny-Pet-Monitor/Tawny-Core),
+  the same Rust library as in the Android app. It does pairing, the security
+  code, Nostr and the call logic, so the apps behave the same way.
+  `native/core` is a copy of it.
+- **Video and sound** run on libwebrtc, Google's WebRTC library, through
+  [LiveKit's Rust bindings](https://github.com/livekit/rust-sdks). It uses
+  software video codecs only, whatever graphics card the computer has.
 
 ```
-┌───────────── tawny (one process tree) ─────────────┐
-│  CEF window ──http://127.0.0.1:47821──▶ loopback server (axum)
-│   web/  (the Tawny web client)          ├─ web/, embedded at build time
-│                                         ├─ /config.json  rendezvous, STUN
-│                                         └─ /ws  signalling relay
-└────────────────────────────────────────────────────┘
+native/desktop/   the app
+  src/            Rust: camera, sound, sessions, the saved channels, recording
+  ui/             the Slint screens, fonts, sounds
+  lang/           translations (gettext .po files)
+  csrc/           a small C layer that gives the recorder libwebrtc's encoders
+  packaging/      desktop entry, icon, Flatpak manifest, Windows installer script
+  tools/          AppImage and Flatpak build scripts
+native/core/      tawny-core, copied from Tawny-Core
 ```
 
-- **`src-tauri/src/server.rs`** serves the page over loopback, which is a
-  secure context, so the camera and mic work. It answers only its own
-  `Host`, and `/ws` answers only its own `Origin`, so other pages in your
-  browser cannot use it.
-- **`src-tauri/src/relay.rs`** is a Rust port of the relay in Tawny Docker's
-  `server.js`: the same admission, tickets, close codes and caps. It is the
-  page's same-origin relay of last resort.
-- **`src-tauri/src/config.rs`** decides what the page is told about servers.
-  The values are fixed at build time, like Android's gradle properties:
+Your channels and settings are one file in the app's data folder:
+`~/.local/share/io.github.PressF4me.Tawny` on Linux and
+`%LOCALAPPDATA%\io.github.PressF4me.Tawny` on Windows. On Linux it is
+readable by you only. **Updating from 0.1.x keeps every pairing.** On its first start, 0.2.0
+reads the old version's storage once, and never changes or sends it.
 
-  | Variable | Default |
-  |---|---|
-  | `TAWNY_RENDEZVOUS_URL` | the same rendezvous as the Play Store app |
-  | `TAWNY_STUN_URLS` | Cloudflare + Google STUN (`off` for none) |
-  | `TAWNY_TURN_MODE` | `auto` (`always` forces TURN) |
+Only one Tawny runs at a time. A pairing link opened from your browser goes to
+the running copy, and it only ever opens "Join now", so nothing joins without
+your click.
 
-- **`web/`** is vendored from the Android repo (`public/`), which is the
-  source of truth. Refresh it with `tools/sync-web.sh`. `web/.source` records
-  the commit.
-
-The port stays at 47821 from run to run because the page keeps its saved
-channels in `localStorage`, which is per origin, port included.
+The top-level `src-tauri/`, `web/`, `packaging/` and `tools/` folders are the
+0.1.x app (Tauri and Chromium). They are kept for reference and are not used
+to build releases.
 
 ## Build
 
-Requirements on Linux: Rust 1.95+, GTK 4.14+ dev headers, cmake, ninja,
-patchelf, and the Tauri CLI that matches the pinned crates:
-
-```sh
-cargo install tauri-cli --version '=3.0.0-alpha.1' --locked
-```
+From `native/desktop`:
 
 | | |
 |---|---|
-| Run from source | `cd src-tauri && cargo tauri dev` |
-| AppImage | `tools/build-appimage.sh` → `dist/` |
-| Flatpak | `tools/build-flatpak.sh` → installs for your user, bundle in `dist/` |
-| Windows installer | on Windows, with the MSVC build tools, CMake and Ninja: `cd src-tauri; cargo tauri build --bundles nsis` |
+| Run from source | `cargo run --release` |
+| Checks | `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test` |
+| AppImage | `APPIMAGETOOL=/path/to/appimagetool tools/build-appimage.sh` → `dist/` |
+| Flatpak | `tools/build-flatpak.sh` (`--install` to install it for your user) → `dist/` |
+| Every screen as a picture | `cargo run --release -- --shot <folder>`: light and dark PNGs, with no display needed |
 
-The first build downloads the CEF distribution (≈300 MB compressed) into
-`~/.cache/tauri-cef`.
+Linux needs Rust 1.95 or newer, Clang and libclang (the releases use LLVM 21
+or 22), `pkg-config`, and the ALSA and fontconfig development headers. The
+first build downloads LiveKit's prebuilt libwebrtc. On Windows, build with the
+MSVC tools; `.github/workflows/native-windows.yml` does exactly that.
 
 ### Flatpak notes
 
-- Flathub builds offline. Crates come from
-  `packaging/flatpak/cargo-sources.json`; run `tools/update-cargo-sources.sh`
-  and commit the result whenever `Cargo.lock` changes. CEF is the exact
-  tarball `download-cef` would fetch, pinned by sha256 in the manifest. Bump
-  it whenever the `cef` crate's version changes.
-- Chromium's sandbox cannot create namespaces inside Flatpak, so the app runs
-  under [zypak](https://github.com/refi64/zypak), like every Chromium-based
-  app on Flathub.
+Flathub builds offline. Crates come from
+`native/desktop/packaging/flatpak/cargo-sources.json`, so run
+`native/desktop/tools/update-cargo-sources.sh` and commit the result whenever `Cargo.lock`
+changes. The prebuilt libwebrtc is pinned by its sha256 in the manifest.
 
 ## Releasing
 
-Push a `v*` tag. `.github/workflows/release.yml` builds the AppImage, the
-Flatpak bundle and the Windows installer, and attaches all three to a GitHub
-release. Flathub builds from its
-own `flathub/io.github.PressF4me.Tawny` repo, whose manifest is this one with
-the `dir` source replaced by `type: git` and the tag.
-
-## Status
-
-Early. Tauri 3 and its CEF runtime are alpha, pinned exactly in `Cargo.toml`.
+- **Windows:** the *Native Windows* workflow runs on every push to `main`
+  that touches `native/`. It builds, lints and tests the app, builds the
+  installer, installs it silently on the runner, checks every screen there,
+  uninstalls it, and keeps `Tawny-<version>-x64-setup.exe` as an artifact.
+- **Linux:** the AppImage and the Flatpak bundle are built with the scripts
+  above.
+- All three are attached to a GitHub release by hand for now.
 
 ## License
 
