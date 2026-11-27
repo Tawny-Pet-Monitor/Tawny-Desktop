@@ -1,6 +1,8 @@
-# Build the Linux AppImage, the Flatpak bundle and the Windows installer on
-# every push, and attach all three to a GitHub release when a v* tag is pushed.
-# Flathub itself builds from the flathub/io.github.PressF4me.Tawny repo.
+# The previous Desktop (Tauri with CEF, src-tauri/): build its Linux AppImage,
+# Flatpak bundle and Windows installer on every push. From 0.2.0 Tawny is the
+# native app in native/desktop, released by hand, so a v* tag no longer runs
+# this: it would attach these old builds to the native release. Its attach
+# steps stay for a manual run on an old tag.
 #
 # Builds go straight onto the release, never through workflow artifacts: the
 # bundles are hundreds of MB each, and a private repo's artifact storage quota
@@ -17,7 +19,6 @@ name: release
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
