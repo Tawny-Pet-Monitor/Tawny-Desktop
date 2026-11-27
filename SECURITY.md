@@ -14,5 +14,7 @@ get a reply, and a fix before any details are published.
 
 The threat model and the design (pairing, the rendezvous, the relays, what each
 one can and cannot see) are written up in the Android repository's
-[SECURITY.md](https://github.com/PressF4me/Tawny-APK/blob/master/SECURITY.md),
-which is where the shared web client lives.
+[SECURITY.md](https://github.com/Tawny-Pet-Monitor/Tawny-APK/blob/master/SECURITY.md).
+The pairing and call logic this app runs is
+[tawny-core](https://github.com/Tawny-Pet-Monitor/Tawny-Core), the same as in
+the Android app.

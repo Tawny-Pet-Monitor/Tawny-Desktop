@@ -110,9 +110,8 @@ Only one Tawny runs at a time. A pairing link opened from your browser goes to
 the running copy, and it only ever opens "Join now", so nothing joins without
 your click.
 
-The top-level `src-tauri/`, `web/`, `packaging/` and `tools/` folders are the
-0.1.x app (Tauri and Chromium). They are kept for reference and are not used
-to build releases.
+The 0.1.x app (Tauri and Chromium) is in this repo's history, up to tag
+`v0.1.13`.
 
 ## Build
 
