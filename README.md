@@ -78,6 +78,12 @@ on the same network.
 
 ## How it's built
 
+Since 0.2.0 the app is native: `native/desktop` is the app in Rust with a
+[Slint](https://slint.dev) UI, and `native/core` is a copy of **tawny-core**,
+Tawny's shared engine, whose home is
+[**Tawny-Core**](https://github.com/Tawny-Pet-Monitor/Tawny-Core). What follows
+describes the earlier Tauri build (0.1.x), which is still in this repo.
+
 The app is Rust: [Tauri 3](https://tauri.app) running on the **Chromium Embedded
 Framework** (`tauri-runtime-cef`), not the usual WebKitGTK. Tawny is WebRTC
 from end to end, and WebKitGTK's WebRTC is off or incomplete on most distros.
