@@ -26,6 +26,7 @@ mod tip;
 mod tr;
 mod video;
 mod webm;
+mod whatsnew;
 mod zoom;
 
 use std::cell::RefCell;
@@ -86,16 +87,21 @@ fn main() -> Result<()> {
     };
     let mut opened = store::Store::open_default()?;
     // An update from the old Desktop keeps its channels and pairings.
-    match migrate::run(&mut opened) {
-        Ok(r) if r.channels > 0 => {
-            eprintln!(
-                "tawny: brought over {} channel(s) from the old Desktop",
-                r.channels
-            );
+    let from_old_desktop = match migrate::run(&mut opened) {
+        Ok(r) => {
+            if r.channels > 0 {
+                eprintln!(
+                    "tawny: brought over {} channel(s) from the old Desktop",
+                    r.channels
+                );
+            }
+            r.from.is_some()
         }
-        Ok(_) => {}
-        Err(e) => eprintln!("tawny: reading the old Desktop's storage: {e:#}"),
-    }
+        Err(e) => {
+            eprintln!("tawny: reading the old Desktop's storage: {e:#}");
+            false
+        }
+    };
     let store = Rc::new(RefCell::new(opened));
     gpu::choose_renderer(&store::default_dir()?);
     let ui = AppWindow::new()?;
@@ -106,11 +112,9 @@ fn main() -> Result<()> {
     let sessions: Rc<dyn app::Sessions> = host.clone();
     app::attach(&ui, &store, &sessions);
     tip::attach(&ui, host.handle());
+    whatsnew::attach(&ui, &store, from_old_desktop, link.is_some());
     // Opened with a pairing link (the system's tawny:// handler).
-    if let Some(link) = std::env::args()
-        .nth(1)
-        .filter(|a| a.starts_with("tawny://"))
-    {
+    if let Some(link) = link {
         host.read_link(&ui, &link);
     }
     dev_hatch(&ui, &store, &sessions, &host);

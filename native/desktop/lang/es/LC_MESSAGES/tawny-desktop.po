@@ -737,16 +737,6 @@ msgctxt "WhatsNewSheet"
 msgid "Tawny just got better"
 msgstr "Tawny ahora es mejor"
 
-#: ui/sheets2.slint:582
-msgctxt "WhatsNewSheet"
-msgid "Read the full changelog"
-msgstr "Ver el registro de cambios"
-
-#: ui/sheets2.slint:588
-msgctxt "WhatsNewSheet"
-msgid "Thank you for supporting Tawny. It stays free for everyone because of people like you."
-msgstr "Gracias por apoyar Tawny. Sigue siendo gratis para todos gracias a personas como tú."
-
 #: ui/sheets2.slint:604 ui/sheets2.slint:631
 msgctxt "WhatsNewSheet"
 msgid "Support Tawny"
@@ -1016,3 +1006,63 @@ msgstr "Empezar"
 msgctxt "Welcome"
 msgid "I’ve set this up before"
 msgstr "Ya lo configuré antes"
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Faster and lighter"
+msgstr "Más rápido y más ligero"
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "No web browser inside any more: Tawny starts faster and uses less memory."
+msgstr "Ya no lleva un navegador web por dentro: Tawny abre más rápido y usa menos memoria."
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Calls that fix themselves"
+msgstr "Llamadas que se arreglan solas"
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "If the network drops, the call comes back on its own."
+msgstr "Si se cae la red, la llamada vuelve sola."
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Zoom where you point"
+msgstr "Zoom donde apuntas"
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Turn the mouse wheel over the picture, then drag to see any corner of the room."
+msgstr "Gira la rueda del ratón sobre la imagen y luego arrastra para ver cualquier rincón de la habitación."
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Always the right way up"
+msgstr "Siempre derecho"
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "An upright phone shows upright on every screen, iPhone too."
+msgstr "Un teléfono vertical se ve derecho en todas las pantallas, también en iPhone."
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Your channels and pairings came along."
+msgstr "Tus canales y emparejamientos se conservaron."
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Here’s what’s new for you and your pet."
+msgstr "Esto es lo nuevo para ti y tu mascota."
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "See everything that changed"
+msgstr "Ver todo lo que cambió"
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Tawny stays free because of people like you."
+msgstr "Tawny sigue siendo gratis gracias a personas como tú."

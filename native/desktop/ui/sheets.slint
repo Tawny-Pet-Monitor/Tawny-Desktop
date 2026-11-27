@@ -11,6 +11,10 @@ export component Sheet inherits Rectangle {
     in property <length> card-width: 480px;
     // Some sheets keep a floor (who's here: half the window).
     in property <length> min-card-height: 0;
+    // The card's inner padding; a sheet with a picture edge to edge sets 0
+    // and pads its own words.
+    in property <length> pad-x: 20px;
+    in property <length> pad-top: 16px;
     callback dismiss();
 
     // Fades in and rises 12 px as it opens.
@@ -50,11 +54,13 @@ export component Sheet inherits Rectangle {
         accessible-label: root.title;
         // Clicks on the card stay on the card.
         TouchArea { }
+        // Whatever is drawn inside keeps to the rounded corners.
+        clip: true;
         body := VerticalLayout {
-            padding-left: 20px;
-            padding-right: 20px;
-            padding-top: 16px;
-            padding-bottom: 20px;
+            padding-left: root.pad-x;
+            padding-right: root.pad-x;
+            padding-top: root.pad-top;
+            padding-bottom: root.pad-x == 0 ? 0 : 20px;
             spacing: 13px;
             alignment: start;
             if root.title != "": Text {

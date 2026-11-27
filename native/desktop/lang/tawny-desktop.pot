@@ -776,11 +776,6 @@ msgctxt "WhatsNewSheet"
 msgid "Tawny just got better"
 msgstr ""
 
-#: ui/sheets2.slint:582
-msgctxt "WhatsNewSheet"
-msgid "Read the full changelog"
-msgstr ""
-
 #: ui/sheets2.slint:588
 msgctxt "WhatsNewSheet"
 msgid ""
@@ -1062,4 +1057,64 @@ msgstr ""
 #: ui/welcome.slint:85
 msgctxt "Welcome"
 msgid "I’ve set this up before"
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Faster and lighter"
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "No web browser inside any more: Tawny starts faster and uses less memory."
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Calls that fix themselves"
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "If the network drops, the call comes back on its own."
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Zoom where you point"
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Turn the mouse wheel over the picture, then drag to see any corner of the room."
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Always the right way up"
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "An upright phone shows upright on every screen, iPhone too."
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Your channels and pairings came along."
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Here’s what’s new for you and your pet."
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "See everything that changed"
+msgstr ""
+
+#: ui/sheets2.slint
+msgctxt "WhatsNewSheet"
+msgid "Tawny stays free because of people like you."
 msgstr ""

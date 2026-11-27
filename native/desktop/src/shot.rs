@@ -154,12 +154,7 @@ fn fill_sheets(ui: &AppWindow) {
     ui.set_only_checks(ModelRc::new(VecModel::from(checks)));
     ui.set_only_verdict("Both relays answered and passed a sealed message back.".into());
     ui.set_only_passed(true);
-    ui.set_whatsnew_version("1.1.0".into());
-    ui.set_whatsnew_notes(ModelRc::new(VecModel::from(vec![
-        slint::SharedString::from("A faster, native Tawny for the desktop"),
-        slint::SharedString::from("Pair over Nostr with your own relays"),
-        slint::SharedString::from("See who is watching, and give yourself a name"),
-    ])));
+    ui.set_whatsnew_version("0.2".into());
     ui.set_whatsnew_changelog(true);
 }
 

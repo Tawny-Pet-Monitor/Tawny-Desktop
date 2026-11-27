@@ -108,7 +108,6 @@ export component AppWindow inherits Window {
     callback only-confirm();
     // The update board.
     in property <string> whatsnew-version;
-    in property <[string]> whatsnew-notes;
     in property <bool> whatsnew-changelog;
     callback open-changelog();
     // The Support hub's trio.
@@ -255,7 +254,6 @@ export component AppWindow inherits Window {
     }
     if root.sheet == "whatsnew": WhatsNewSheet {
         version: root.whatsnew-version;
-        notes: root.whatsnew-notes;
         has-changelog: root.whatsnew-changelog;
         dismiss => { root.sheet = ""; }
         changelog => { root.open-changelog(); }
